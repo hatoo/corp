@@ -7,7 +7,9 @@ use std::{
 
 use futures::{task::noop_waker_ref, Future};
 
+/// stream and index
 pub struct Cursor<T> {
+    /// stream of items. You must only grow this vector.
     pub stream: Vec<T>,
     pub index: usize,
 }
@@ -27,11 +29,6 @@ impl<T> Input<T> {
 
     pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         self.0.borrow_mut()
-    }
-
-    pub fn advance(&self) -> usize {
-        self.0.borrow_mut().index += 1;
-        self.0.borrow().index
     }
 
     pub fn read(&self) -> impl Future<Output = ()> + '_ {
@@ -103,6 +100,7 @@ pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Ran
             input.read().await;
         }
 
+        // TODO: this can be more efficient
         let mut cursor = input.cursor_mut();
         if !cond(&cursor.stream[cursor.index]) {
             return start..cursor.index;
@@ -234,6 +232,29 @@ mod tests {
         input.0.borrow_mut().stream.push(b';');
 
         assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bad_borrow() {
+        async fn bad(input: &Input<u8>) -> usize {
+            let cursor = input.cursor();
+            // You must not call read().await while borrowing cursor.
+            // Can we ensure that it can't happen?
+            input.read().await;
+            cursor.remaining_len()
+        }
+
+        let input = Input(RefCell::new(Cursor {
+            stream: Vec::new(),
+            index: 0,
+        }));
+
+        let mut p = bad(&input).boxed_local();
+
+        assert!(p.poll_noop().is_pending());
+
+        input.0.borrow_mut().stream.push(1);
     }
 
     #[test]
