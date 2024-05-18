@@ -281,38 +281,4 @@ mod tests {
 
         input.cursor_mut().stream.push(1);
     }
-
-    #[test]
-    fn test() {
-        struct F<'a> {
-            v: &'a RefCell<Vec<u8>>,
-        }
-
-        impl Future for F<'_> {
-            type Output = ();
-
-            fn poll(
-                self: std::pin::Pin<&mut Self>,
-                _cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Self::Output> {
-                if self.v.borrow().len() == 0 {
-                    std::task::Poll::Pending
-                } else {
-                    std::task::Poll::Ready(())
-                }
-            }
-        }
-
-        let v = RefCell::new(Vec::new());
-
-        let mut f = F { v: &v };
-
-        let mut cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
-
-        assert!(f.poll_unpin(&mut cx).is_pending());
-
-        f.v.borrow_mut().push(1);
-
-        assert!(f.poll_unpin(&mut cx).is_ready());
-    }
 }
