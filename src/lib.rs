@@ -96,13 +96,13 @@ impl<T> Input<T> {
     }
 
     pub fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
-        struct Read<'a, T> {
+        struct ReadAtLeast<'a, T> {
             input: &'a Input<T>,
             start_len: usize,
             at_least: usize,
         }
 
-        impl<T> Future for Read<'_, T> {
+        impl<T> Future for ReadAtLeast<'_, T> {
             type Output = ();
 
             fn poll(
@@ -119,7 +119,7 @@ impl<T> Input<T> {
             }
         }
 
-        Read {
+        ReadAtLeast {
             input: self,
             start_len: self.cursor().stream.len(),
             at_least,
