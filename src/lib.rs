@@ -93,37 +93,6 @@ impl<T> Input<T> {
             start_len: self.cursor().stream.len(),
         }
     }
-
-    pub fn peek_copied(&self) -> impl Future<Output = T> + '_
-    where
-        T: Copy,
-    {
-        struct PeekCopied<'a, T> {
-            input: &'a Input<T>,
-        }
-
-        impl<T> Future for PeekCopied<'_, T>
-        where
-            T: Copy,
-        {
-            type Output = T;
-
-            fn poll(
-                self: std::pin::Pin<&mut Self>,
-                _cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Self::Output> {
-                let borrow = self.input.cursor();
-
-                if borrow.index < borrow.stream.len() {
-                    std::task::Poll::Ready(borrow.stream[borrow.index])
-                } else {
-                    std::task::Poll::Pending
-                }
-            }
-        }
-
-        PeekCopied { input: self }
-    }
 }
 
 pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
