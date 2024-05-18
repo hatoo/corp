@@ -41,6 +41,7 @@ impl<T> Input<T> {
     }
 
     #[cfg(not(debug_assertions))]
+    #[inline]
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         unsafe { &*self.0.get() }
     }
@@ -51,8 +52,13 @@ impl<T> Input<T> {
     }
 
     #[cfg(not(debug_assertions))]
+    #[inline]
     pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         unsafe { &mut *self.0.get() }
+    }
+
+    pub fn into_inner(self) -> Cursor<T> {
+        self.0.into_inner()
     }
 
     pub fn read(&self) -> impl Future<Output = ()> + '_ {
