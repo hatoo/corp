@@ -36,23 +36,27 @@ impl<T> Input<T> {
     }
 
     #[cfg(debug_assertions)]
+    /// Don't call .await while holding a borrow of the cursor.
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         self.0.borrow()
     }
 
     #[cfg(not(debug_assertions))]
     #[inline]
+    /// Don't call .await while holding a borrow of the cursor.
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         unsafe { &*self.0.get() }
     }
 
     #[cfg(debug_assertions)]
+    /// Don't call .await while holding a borrow of the cursor.
     pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         self.0.borrow_mut()
     }
 
     #[cfg(not(debug_assertions))]
     #[inline]
+    /// Don't call .await while holding a borrow of the cursor.
     pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         unsafe { &mut *self.0.get() }
     }
@@ -126,17 +130,20 @@ pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Ran
     let start = input.cursor().index;
 
     loop {
-        while input.cursor().remaining_len() == 0 {
-            input.read().await;
-        }
-
-        // TODO: this can be more efficient
         let mut cursor = input.cursor_mut();
-        if !cond(&cursor.stream[cursor.index]) {
-            return start..cursor.index;
+
+        for (i, item) in cursor.stream[cursor.index..].iter().enumerate() {
+            if !cond(item) {
+                cursor.index += i;
+                return start..cursor.index;
+            }
         }
 
-        cursor.index += 1;
+        cursor.index = cursor.stream.len();
+
+        drop(cursor);
+
+        input.read().await;
     }
 }
 
