@@ -14,8 +14,9 @@ pub struct Cursor<T> {
 }
 
 impl<T> Cursor<T> {
-    pub fn remaining_len(&self) -> usize {
-        self.stream.len() - self.index
+    #[inline]
+    pub fn remaining(&self) -> &[T] {
+        &self.stream[self.index..]
     }
 }
 
@@ -93,6 +94,54 @@ impl<T> Input<T> {
             start_len: self.cursor().stream.len(),
         }
     }
+
+    pub fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
+        struct Read<'a, T> {
+            input: &'a Input<T>,
+            start_len: usize,
+            at_least: usize,
+        }
+
+        impl<T> Future for Read<'_, T> {
+            type Output = ();
+
+            fn poll(
+                self: std::pin::Pin<&mut Self>,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Self::Output> {
+                let borrow = self.input.cursor();
+
+                if borrow.stream.len() >= self.start_len + self.at_least {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            }
+        }
+
+        Read {
+            input: self,
+            start_len: self.cursor().stream.len(),
+            at_least,
+        }
+    }
+}
+
+pub async fn tag<T>(input: &Input<T>, tag: &[T]) -> Result<Range<usize>, ()>
+where
+    T: PartialEq,
+{
+    input.read_n(tag.len()).await;
+
+    let mut cursor = input.cursor_mut();
+
+    if cursor.remaining().starts_with(tag) {
+        let start = cursor.index;
+        cursor.index += tag.len();
+        Ok(start..cursor.index)
+    } else {
+        Err(())
+    }
 }
 
 pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
@@ -149,7 +198,7 @@ mod tests {
     #[test]
     fn test_get3() {
         async fn get3<T>(input: &Input<T>) {
-            while input.cursor().remaining_len() < 3 {
+            while input.cursor().remaining().len() < 3 {
                 input.read().await;
             }
         }
@@ -245,7 +294,7 @@ mod tests {
             // You must not call read().await while borrowing cursor.
             // Can we ensure that it can't happen?
             input.read().await;
-            cursor.remaining_len()
+            cursor.remaining().len()
         }
 
         let input = Input::new(Cursor {
