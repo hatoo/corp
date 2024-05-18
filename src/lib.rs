@@ -166,6 +166,7 @@ pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Ran
 }
 
 pub trait PollNoop: Future + Unpin {
+    // better name?
     fn poll_noop(&mut self) -> Poll<<Self as Future>::Output> {
         let mut cx = Context::from_waker(noop_waker_ref());
 
