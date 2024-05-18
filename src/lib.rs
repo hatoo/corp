@@ -27,12 +27,12 @@ pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
     #[cfg(debug_assertions)]
-    pub fn new(currsor: Cursor<T>) -> Self {
-        Self(std::cell::RefCell::new(currsor))
+    pub fn new(cursor: Cursor<T>) -> Self {
+        Self(std::cell::RefCell::new(cursor))
     }
     #[cfg(not(debug_assertions))]
-    pub fn new(currsor: Cursor<T>) -> Self {
-        Self(std::cell::UnsafeCell::new(currsor))
+    pub fn new(cursor: Cursor<T>) -> Self {
+        Self(std::cell::UnsafeCell::new(cursor))
     }
 
     #[cfg(debug_assertions)]
