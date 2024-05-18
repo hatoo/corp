@@ -146,10 +146,9 @@ impl<T: Future + Unpin> PollNoop for T {}
 
 #[cfg(test)]
 mod tests {
-    use futures::{Future, FutureExt};
+    use futures::FutureExt;
 
     use super::*;
-    use std::cell::RefCell;
 
     #[test]
     fn test_read() {
