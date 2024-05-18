@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     ops::{Deref, DerefMut, Range},
     pin::pin,
     task::{Context, Poll},
@@ -20,15 +19,40 @@ impl<T> Cursor<T> {
     }
 }
 
-pub struct Input<T>(pub RefCell<Cursor<T>>);
+#[cfg(debug_assertions)]
+pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
+
+#[cfg(not(debug_assertions))]
+pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
+    #[cfg(debug_assertions)]
+    pub fn new(currsor: Cursor<T>) -> Self {
+        Self(std::cell::RefCell::new(currsor))
+    }
+    #[cfg(not(debug_assertions))]
+    pub fn new(currsor: Cursor<T>) -> Self {
+        Self(std::cell::UnsafeCell::new(currsor))
+    }
+
+    #[cfg(debug_assertions)]
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         self.0.borrow()
     }
 
+    #[cfg(not(debug_assertions))]
+    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+        unsafe { &*self.0.get() }
+    }
+
+    #[cfg(debug_assertions)]
     pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         self.0.borrow_mut()
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        unsafe { &mut *self.0.get() }
     }
 
     pub fn read(&self) -> impl Future<Output = ()> + '_ {
@@ -44,7 +68,7 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                let borrow = self.input.0.borrow();
+                let borrow = self.input.cursor();
 
                 if borrow.stream.len() > self.start_len {
                     std::task::Poll::Ready(())
@@ -56,7 +80,7 @@ impl<T> Input<T> {
 
         Read {
             input: self,
-            start_len: self.0.borrow().stream.len(),
+            start_len: self.cursor().stream.len(),
         }
     }
 
@@ -78,7 +102,7 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                let borrow = self.input.0.borrow();
+                let borrow = self.input.cursor();
 
                 if borrow.index < borrow.stream.len() {
                     std::task::Poll::Ready(borrow.stream[borrow.index])
@@ -129,16 +153,16 @@ mod tests {
 
     #[test]
     fn test_read() {
-        let input = Input(RefCell::new(Cursor {
+        let input = Input::new(Cursor {
             stream: vec![1, 2, 3],
             index: 0,
-        }));
+        });
 
         let mut read = input.read();
 
         assert!(read.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(4);
+        input.cursor_mut().stream.push(4);
 
         assert!(read.poll_noop().is_ready());
     }
@@ -151,55 +175,55 @@ mod tests {
             }
         }
 
-        let input = Input(RefCell::new(Cursor {
+        let input = Input::new(Cursor {
             stream: Vec::new(),
             index: 0,
-        }));
+        });
 
         let mut get3 = get3(&input).boxed_local();
 
         assert!(get3.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(1);
+        input.cursor_mut().stream.push(1);
         assert!(get3.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(2);
+        input.cursor_mut().stream.push(2);
         assert!(get3.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(3);
+        input.cursor_mut().stream.push(3);
         assert!(get3.poll_noop().is_ready());
     }
 
     #[test]
     fn test_many0() {
-        let input = Input(RefCell::new(Cursor {
+        let input = Input::new(Cursor {
             stream: Vec::new(),
             index: 0,
-        }));
+        });
 
         let cond = move |x: &i32| *x % 2 == 0;
 
         let mut p = many0(&input, cond).boxed_local();
 
-        input.0.borrow_mut().stream.push(0);
+        input.cursor_mut().stream.push(0);
         assert!(p.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(2);
+        input.cursor_mut().stream.push(2);
         assert!(p.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(4);
+        input.cursor_mut().stream.push(4);
         assert!(p.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(1);
+        input.cursor_mut().stream.push(1);
         assert_eq!(p.poll_noop(), Poll::Ready(0..3));
     }
 
     #[test]
     fn test_combined() {
-        let input = Input(RefCell::new(Cursor {
+        let input = Input::new(Cursor {
             stream: Vec::new(),
             index: 0,
-        }));
+        });
 
         let p = async {
             let alpha0 = many0(&input, |x: &u8| x.is_ascii_alphabetic()).await;
@@ -213,29 +237,30 @@ mod tests {
 
         let mut p = p.boxed_local();
 
-        input.0.borrow_mut().stream.push(b'a');
-        input.0.borrow_mut().stream.push(b'b');
-        input.0.borrow_mut().stream.push(b'c');
+        input.cursor_mut().stream.push(b'a');
+        input.cursor_mut().stream.push(b'b');
+        input.cursor_mut().stream.push(b'c');
 
         assert!(p.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(b'1');
-        input.0.borrow_mut().stream.push(b'2');
-        input.0.borrow_mut().stream.push(b'3');
+        input.cursor_mut().stream.push(b'1');
+        input.cursor_mut().stream.push(b'2');
+        input.cursor_mut().stream.push(b'3');
 
         assert!(p.poll_noop().is_pending());
-        input.0.borrow_mut().stream.push(b'a');
-        input.0.borrow_mut().stream.push(b'b');
-        input.0.borrow_mut().stream.push(b'c');
+        input.cursor_mut().stream.push(b'a');
+        input.cursor_mut().stream.push(b'b');
+        input.cursor_mut().stream.push(b'c');
 
         assert!(p.poll_noop().is_pending());
-        input.0.borrow_mut().stream.push(b';');
+        input.cursor_mut().stream.push(b';');
 
         assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
     }
 
     #[test]
     #[should_panic]
+    #[cfg(debug_assertions)]
     fn test_bad_borrow() {
         async fn bad(input: &Input<u8>) -> usize {
             let cursor = input.cursor();
@@ -245,16 +270,16 @@ mod tests {
             cursor.remaining_len()
         }
 
-        let input = Input(RefCell::new(Cursor {
+        let input = Input::new(Cursor {
             stream: Vec::new(),
             index: 0,
-        }));
+        });
 
         let mut p = bad(&input).boxed_local();
 
         assert!(p.poll_noop().is_pending());
 
-        input.0.borrow_mut().stream.push(1);
+        input.cursor_mut().stream.push(1);
     }
 
     #[test]
