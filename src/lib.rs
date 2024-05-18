@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    ops::Deref,
+    ops::{Deref, DerefMut, Range},
     pin::pin,
     task::{Context, Poll},
 };
@@ -23,6 +23,15 @@ pub struct Input<T>(pub RefCell<Cursor<T>>);
 impl<T> Input<T> {
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         self.0.borrow()
+    }
+
+    pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        self.0.borrow_mut()
+    }
+
+    pub fn advance(&self) -> usize {
+        self.0.borrow_mut().index += 1;
+        self.0.borrow().index
     }
 
     pub fn read(&self) -> impl Future<Output = ()> + '_ {
@@ -53,6 +62,54 @@ impl<T> Input<T> {
             start_len: self.0.borrow().stream.len(),
         }
     }
+
+    pub fn peek_copied(&self) -> impl Future<Output = T> + '_
+    where
+        T: Copy,
+    {
+        struct PeekCopied<'a, T> {
+            input: &'a Input<T>,
+        }
+
+        impl<T> Future for PeekCopied<'_, T>
+        where
+            T: Copy,
+        {
+            type Output = T;
+
+            fn poll(
+                self: std::pin::Pin<&mut Self>,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Self::Output> {
+                let borrow = self.input.0.borrow();
+
+                if borrow.index < borrow.stream.len() {
+                    std::task::Poll::Ready(borrow.stream[borrow.index])
+                } else {
+                    std::task::Poll::Pending
+                }
+            }
+        }
+
+        PeekCopied { input: self }
+    }
+}
+
+pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
+    let start = input.cursor().index;
+
+    loop {
+        while input.cursor().remaining_len() == 0 {
+            input.read().await;
+        }
+
+        let mut cursor = input.cursor_mut();
+        if !cond(&cursor.stream[cursor.index]) {
+            return start..cursor.index;
+        }
+
+        cursor.index += 1;
+    }
 }
 
 pub trait PollNoop: Future + Unpin {
@@ -64,12 +121,6 @@ pub trait PollNoop: Future + Unpin {
 }
 
 impl<T: Future + Unpin> PollNoop for T {}
-
-async fn get3<T>(input: &Input<T>) {
-    while input.cursor().remaining_len() < 3 {
-        input.read().await;
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -96,6 +147,12 @@ mod tests {
 
     #[test]
     fn test_get3() {
+        async fn get3<T>(input: &Input<T>) {
+            while input.cursor().remaining_len() < 3 {
+                input.read().await;
+            }
+        }
+
         let input = Input(RefCell::new(Cursor {
             stream: Vec::new(),
             index: 0,
@@ -103,17 +160,40 @@ mod tests {
 
         let mut get3 = get3(&input).boxed_local();
 
-        let mut cx = Context::from_waker(noop_waker_ref());
-        assert!(get3.poll_unpin(&mut cx).is_pending());
+        assert!(get3.poll_noop().is_pending());
 
         input.0.borrow_mut().stream.push(1);
-        assert!(get3.poll_unpin(&mut cx).is_pending());
+        assert!(get3.poll_noop().is_pending());
 
         input.0.borrow_mut().stream.push(2);
-        assert!(get3.poll_unpin(&mut cx).is_pending());
+        assert!(get3.poll_noop().is_pending());
 
         input.0.borrow_mut().stream.push(3);
-        assert!(get3.poll_unpin(&mut cx).is_ready());
+        assert!(get3.poll_noop().is_ready());
+    }
+
+    #[test]
+    fn test_many0() {
+        let input = Input(RefCell::new(Cursor {
+            stream: Vec::new(),
+            index: 0,
+        }));
+
+        let cond = move |x: &i32| *x % 2 == 0;
+
+        let mut p = many0(&input, cond).boxed_local();
+
+        input.0.borrow_mut().stream.push(0);
+        assert!(p.poll_noop().is_pending());
+
+        input.0.borrow_mut().stream.push(2);
+        assert!(p.poll_noop().is_pending());
+
+        input.0.borrow_mut().stream.push(4);
+        assert!(p.poll_noop().is_pending());
+
+        input.0.borrow_mut().stream.push(1);
+        assert_eq!(p.poll_noop(), Poll::Ready(0..3));
     }
 
     #[test]
