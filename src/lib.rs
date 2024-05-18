@@ -197,6 +197,46 @@ mod tests {
     }
 
     #[test]
+    fn test_combined() {
+        let input = Input(RefCell::new(Cursor {
+            stream: Vec::new(),
+            index: 0,
+        }));
+
+        let p = async {
+            let alpha0 = many0(&input, |x: &u8| x.is_ascii_alphabetic()).await;
+            dbg!(&alpha0);
+            let digit = many0(&input, |x: &u8| x.is_ascii_digit()).await;
+            dbg!(&digit);
+            let alpha2 = many0(&input, |x: &u8| x.is_ascii_alphabetic()).await;
+
+            (alpha0, digit, alpha2)
+        };
+
+        let mut p = p.boxed_local();
+
+        input.0.borrow_mut().stream.push(b'a');
+        input.0.borrow_mut().stream.push(b'b');
+        input.0.borrow_mut().stream.push(b'c');
+
+        assert!(p.poll_noop().is_pending());
+
+        input.0.borrow_mut().stream.push(b'1');
+        input.0.borrow_mut().stream.push(b'2');
+        input.0.borrow_mut().stream.push(b'3');
+
+        assert!(p.poll_noop().is_pending());
+        input.0.borrow_mut().stream.push(b'a');
+        input.0.borrow_mut().stream.push(b'b');
+        input.0.borrow_mut().stream.push(b'c');
+
+        assert!(p.poll_noop().is_pending());
+        input.0.borrow_mut().stream.push(b';');
+
+        assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
+    }
+
+    #[test]
     fn test() {
         struct F<'a> {
             v: &'a RefCell<Vec<u8>>,
