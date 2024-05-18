@@ -159,8 +159,6 @@ impl<T: Future + Unpin> PollNoop for T {}
 
 #[cfg(test)]
 mod tests {
-    use futures::FutureExt;
-
     use super::*;
 
     #[test]
@@ -191,8 +189,7 @@ mod tests {
             stream: Vec::new(),
             index: 0,
         });
-
-        let mut get3 = get3(&input).boxed_local();
+        let mut get3 = pin!(get3(&input));
 
         assert!(get3.poll_noop().is_pending());
 
@@ -215,7 +212,7 @@ mod tests {
 
         let cond = move |x: &i32| *x % 2 == 0;
 
-        let mut p = many0(&input, cond).boxed_local();
+        let mut p = pin!(many0(&input, cond));
 
         input.cursor_mut().stream.push(0);
         assert!(p.poll_noop().is_pending());
@@ -247,7 +244,7 @@ mod tests {
             (alpha0, digit, alpha2)
         };
 
-        let mut p = p.boxed_local();
+        let mut p = pin!(p);
 
         input.cursor_mut().stream.push(b'a');
         input.cursor_mut().stream.push(b'b');
@@ -287,7 +284,7 @@ mod tests {
             index: 0,
         });
 
-        let mut p = bad(&input).boxed_local();
+        let mut p = pin!(bad(&input));
 
         assert!(p.poll_noop().is_pending());
 
