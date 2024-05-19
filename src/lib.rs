@@ -188,7 +188,7 @@ pin_project! {
     pub struct Parsing<'a, T, F> {
         input: &'a mut Input<T>,
         #[pin]
-        parser: F,
+        future: F,
     }
 }
 
@@ -209,14 +209,14 @@ where
 {
     pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
         Self {
-            parser: parser(unsafe { input.borrow() }),
+            future: parser(unsafe { input.borrow() }),
             input,
         }
     }
 
     pub fn poll(&mut self) -> Poll<O> {
         let mut cx = Context::from_waker(noop_waker_ref());
-        pin!(&mut self.parser).poll(&mut cx)
+        pin!(&mut self.future).poll(&mut cx)
     }
 }
 
