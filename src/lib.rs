@@ -36,44 +36,42 @@ impl<T> Input<T> {
         Self(std::cell::UnsafeCell::new(cursor))
     }
 
-    #[cfg(debug_assertions)]
     /// Don't call .await while holding a borrow of the cursor.
-    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
-        self.0.borrow()
+    pub unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+        #[cfg(debug_assertions)]
+        {
+            self.0.borrow()
+        }
+        #[cfg(not(debug_assertions))]
+        unsafe {
+            &*self.0.get()
+        }
     }
 
-    #[cfg(not(debug_assertions))]
-    #[inline]
     /// Don't call .await while holding a borrow of the cursor.
-    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
-        unsafe { &*self.0.get() }
-    }
-
-    #[cfg(debug_assertions)]
-    /// Don't call .await while holding a borrow of the cursor.
-    pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
-        self.0.borrow_mut()
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[inline]
-    /// Don't call .await while holding a borrow of the cursor.
-    pub fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
-        unsafe { &mut *self.0.get() }
+    pub unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        #[cfg(debug_assertions)]
+        {
+            self.0.borrow_mut()
+        }
+        #[cfg(not(debug_assertions))]
+        unsafe {
+            &mut *self.0.get()
+        }
     }
 
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
     pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
-        f(&self.cursor())
+        f(unsafe { &self.cursor() })
     }
 
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
     pub fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
-        f(&mut self.cursor_mut())
+        f(unsafe { &mut self.cursor_mut() })
     }
 
     pub fn into_inner(self) -> Cursor<T> {
@@ -105,7 +103,7 @@ impl<T> Input<T> {
 
         Read {
             input: self,
-            start_len: self.cursor().stream.len(),
+            start_len: self.scope_cursor(|c| c.stream.len()),
         }
     }
 
@@ -135,7 +133,7 @@ impl<T> Input<T> {
 
         ReadAtLeast {
             input: self,
-            start_len: self.cursor().stream.len(),
+            start_len: self.scope_cursor(|c| c.stream.len()),
             at_least,
         }
     }
@@ -159,7 +157,7 @@ where
 }
 
 pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
-    let start = input.cursor().index;
+    let start = input.scope_cursor(|c| c.index);
 
     loop {
         if let Some(r) = input.scope_cursor_mut(|c| {
@@ -216,9 +214,7 @@ mod tests {
     #[test]
     fn test_get3() {
         async fn get3<T>(input: &Input<T>) {
-            while input.cursor().remaining().len() < 3 {
-                input.read().await;
-            }
+            input.read_n(3).await;
         }
 
         let input = Input::new(Cursor {
@@ -316,7 +312,7 @@ mod tests {
     #[cfg(debug_assertions)]
     fn test_bad_borrow() {
         async fn bad(input: &Input<u8>) -> usize {
-            let cursor = input.cursor();
+            let cursor = unsafe { input.cursor() };
             // You must not call read().await while borrowing cursor.
             // Can we ensure that it can't happen?
             input.read().await;
@@ -332,6 +328,6 @@ mod tests {
 
         assert!(p.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(1);
+        unsafe { input.cursor_mut() }.stream.push(1);
     }
 }
