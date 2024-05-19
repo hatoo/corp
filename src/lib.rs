@@ -412,28 +412,4 @@ mod tests {
         assert!(parsing.poll());
         assert_eq!(parsing.into_result(), Some((0..3, 3..6, 6..9)));
     }
-
-    /*
-    #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic]
-    fn test_bad2() {
-        let mut input = Input::new(Cursor {
-            buf: Vec::new(),
-            index: 0,
-        });
-
-        let mut p = Parsing::new(&mut input, move |iref: InputRef<u8>| {
-            async move { iref }.boxed_local()
-        });
-
-        assert!(p.poll());
-
-        let _r = p.into_result().unwrap();
-        // _r must dropped here
-        input.scope_cursor_mut(move |c| {
-            c.buf.push(1);
-        });
-    }
-    */
 }
