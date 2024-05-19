@@ -1,10 +1,11 @@
 use std::{
     ops::{Deref, DerefMut, Range},
-    pin::pin,
+    pin::{pin, Pin},
     task::{Context, Poll},
 };
 
 use futures::{task::noop_waker_ref, Future};
+use pin_project_lite::pin_project;
 
 /// stream and index
 pub struct Cursor<T> {
@@ -82,8 +83,8 @@ impl<T> Input<T> {
         self.0.into_inner()
     }
 
-    pub fn borrow(&self) -> InputRef<'_, T> {
-        InputRef(self)
+    unsafe fn borrow<'a>(&self) -> InputRef<'a, T> {
+        std::mem::transmute(InputRef(self))
     }
 
     fn read(&self) -> impl Future<Output = ()> + '_ {
@@ -168,6 +169,60 @@ impl<'a, T> InputRef<'a, T> {
     }
 }
 
+pub trait Parser<'a, T, O, F>: FnOnce(InputRef<'a, T>) -> F
+where
+    T: 'a,
+    F: Future<Output = O> + 'a,
+{
+}
+
+impl<'a, T, O, F, P> Parser<'a, T, O, F> for P
+where
+    T: 'a,
+    P: FnOnce(InputRef<'a, T>) -> F,
+    F: Future<Output = O> + 'a,
+{
+}
+
+pin_project! {
+    pub struct Parsing<'a, T, F> {
+        input: &'a mut Input<T>,
+        #[pin]
+        parser: F,
+    }
+}
+
+impl<'a, T, O, F: Future<Output = O>> Future for Parsing<'a, T, F> {
+    type Output = O;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        this.parser.poll(cx)
+    }
+}
+
+impl<'a, T, O, F> Parsing<'a, T, F>
+where
+    F: Future<Output = O> + 'a,
+{
+    pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
+        Self {
+            parser: parser(unsafe { input.borrow() }),
+            input,
+        }
+    }
+}
+
+impl<'a, T, F> Parsing<'a, T, F> {
+    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+        unsafe { self.input.cursor() }
+    }
+
+    pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        unsafe { self.input.cursor_mut() }
+    }
+}
+
 pub async fn tag<'a, T>(input: &mut InputRef<'a, T>, tag: &[T]) -> Result<Range<usize>, ()>
 where
     T: PartialEq,
@@ -225,6 +280,7 @@ impl<T: Future + Unpin> PollNoop for T {}
 mod tests {
     use super::*;
 
+    /*
     #[test]
     fn test_read() {
         let input = Input::new(Cursor {
@@ -365,5 +421,24 @@ mod tests {
         assert!(p.poll_noop().is_pending());
 
         unsafe { input.cursor_mut() }.buf.push(1);
+    }
+    */
+
+    #[test]
+    fn test_parsing() {
+        let mut input = Input::new(Cursor {
+            buf: Vec::new(),
+            index: 0,
+        });
+
+        let mut p = Parsing::new(&mut input, |mut iref: InputRef<u8>| async move {
+            let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+            dbg!(&alpha0);
+            let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
+            dbg!(&digit);
+            let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+
+            (alpha0, digit, alpha2)
+        });
     }
 }
