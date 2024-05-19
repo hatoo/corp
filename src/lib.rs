@@ -9,14 +9,14 @@ use futures::{task::noop_waker_ref, Future};
 /// stream and index
 pub struct Cursor<T> {
     /// stream of items. You must only grow this vector.
-    pub stream: Vec<T>,
+    pub buf: Vec<T>,
     pub index: usize,
 }
 
 impl<T> Cursor<T> {
     #[inline]
     pub fn remaining(&self) -> &[T] {
-        &self.stream[self.index..]
+        &self.buf[self.index..]
     }
 }
 
@@ -92,7 +92,7 @@ impl<T> Input<T> {
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
                 self.input.scope_cursor(|c| {
-                    if c.stream.len() > self.start_len {
+                    if c.buf.len() > self.start_len {
                         std::task::Poll::Ready(())
                     } else {
                         std::task::Poll::Pending
@@ -103,7 +103,7 @@ impl<T> Input<T> {
 
         Read {
             input: self,
-            start_len: self.scope_cursor(|c| c.stream.len()),
+            start_len: self.scope_cursor(|c| c.buf.len()),
         }
     }
 
@@ -122,7 +122,7 @@ impl<T> Input<T> {
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
                 self.input.scope_cursor(|c| {
-                    if c.stream.len() >= self.start_len + self.at_least {
+                    if c.buf.len() >= self.start_len + self.at_least {
                         std::task::Poll::Ready(())
                     } else {
                         std::task::Poll::Pending
@@ -133,7 +133,7 @@ impl<T> Input<T> {
 
         ReadAtLeast {
             input: self,
-            start_len: self.scope_cursor(|c| c.stream.len()),
+            start_len: self.scope_cursor(|c| c.buf.len()),
             at_least,
         }
     }
@@ -161,14 +161,14 @@ pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Ran
 
     loop {
         if let Some(r) = input.scope_cursor_mut(|c| {
-            for (i, item) in c.stream[c.index..].iter().enumerate() {
+            for (i, item) in c.buf[c.index..].iter().enumerate() {
                 if !cond(item) {
                     c.index += i;
                     return Some(start..c.index);
                 }
             }
 
-            c.index = c.stream.len();
+            c.index = c.buf.len();
             None
         }) {
             return r;
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn test_read() {
         let input = Input::new(Cursor {
-            stream: vec![1, 2, 3],
+            buf: vec![1, 2, 3],
             index: 0,
         });
 
@@ -205,7 +205,7 @@ mod tests {
         assert!(read.poll_noop().is_pending());
 
         input.scope_cursor_mut(|c| {
-            c.stream.push(4);
+            c.buf.push(4);
         });
 
         assert!(read.poll_noop().is_ready());
@@ -218,7 +218,7 @@ mod tests {
         }
 
         let input = Input::new(Cursor {
-            stream: Vec::new(),
+            buf: Vec::new(),
             index: 0,
         });
         let mut get3 = pin!(get3(&input));
@@ -226,17 +226,17 @@ mod tests {
         assert!(get3.poll_noop().is_pending());
 
         input.scope_cursor_mut(|c| {
-            c.stream.push(1);
+            c.buf.push(1);
         });
         assert!(get3.poll_noop().is_pending());
 
         input.scope_cursor_mut(|c| {
-            c.stream.push(2);
+            c.buf.push(2);
         });
         assert!(get3.poll_noop().is_pending());
 
         input.scope_cursor_mut(|c| {
-            c.stream.push(3);
+            c.buf.push(3);
         });
         assert!(get3.poll_noop().is_ready());
     }
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn test_many0() {
         let input = Input::new(Cursor {
-            stream: Vec::new(),
+            buf: Vec::new(),
             index: 0,
         });
 
@@ -252,23 +252,23 @@ mod tests {
 
         let mut p = pin!(many0(&input, cond));
 
-        input.scope_cursor_mut(|c| c.stream.push(0));
+        input.scope_cursor_mut(|c| c.buf.push(0));
         assert!(p.poll_noop().is_pending());
 
-        input.scope_cursor_mut(|c| c.stream.push(2));
+        input.scope_cursor_mut(|c| c.buf.push(2));
         assert!(p.poll_noop().is_pending());
 
-        input.scope_cursor_mut(|c| c.stream.push(4));
+        input.scope_cursor_mut(|c| c.buf.push(4));
         assert!(p.poll_noop().is_pending());
 
-        input.scope_cursor_mut(|c| c.stream.push(1));
+        input.scope_cursor_mut(|c| c.buf.push(1));
         assert_eq!(p.poll_noop(), Poll::Ready(0..3));
     }
 
     #[test]
     fn test_combined() {
         let input = Input::new(Cursor {
-            stream: Vec::new(),
+            buf: Vec::new(),
             index: 0,
         });
 
@@ -285,23 +285,23 @@ mod tests {
         let mut p = pin!(p);
 
         input.scope_cursor_mut(|c| {
-            c.stream.extend(b"abc");
+            c.buf.extend(b"abc");
         });
 
         assert!(p.poll_noop().is_pending());
 
         input.scope_cursor_mut(|c| {
-            c.stream.extend(b"123");
+            c.buf.extend(b"123");
         });
 
         assert!(p.poll_noop().is_pending());
         input.scope_cursor_mut(|c| {
-            c.stream.extend(b"def");
+            c.buf.extend(b"def");
         });
 
         assert!(p.poll_noop().is_pending());
         input.scope_cursor_mut(|c| {
-            c.stream.push(b';');
+            c.buf.push(b';');
         });
 
         assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
@@ -320,7 +320,7 @@ mod tests {
         }
 
         let input = Input::new(Cursor {
-            stream: Vec::new(),
+            buf: Vec::new(),
             index: 0,
         });
 
@@ -328,6 +328,6 @@ mod tests {
 
         assert!(p.poll_noop().is_pending());
 
-        unsafe { input.cursor_mut() }.stream.push(1);
+        unsafe { input.cursor_mut() }.buf.push(1);
     }
 }
