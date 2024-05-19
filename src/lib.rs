@@ -461,4 +461,25 @@ mod tests {
         p.cursor_mut().buf.extend(b";");
         assert_eq!(p.poll(), Poll::Ready((0..3, 3..6, 6..9)));
     }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic]
+    fn test_bad2() {
+        let mut input = Input::new(Cursor {
+            buf: Vec::new(),
+            index: 0,
+        });
+
+        let mut p = Parsing::new(&mut input, move |iref: InputRef<u8>| {
+            async move { iref }.boxed_local()
+        });
+
+        let Poll::Ready(mut iref) = p.poll() else {
+            panic!();
+        };
+
+        let _r1 = p.cursor_mut();
+        let _r2 = iref.scope_cursor_mut(|_| {});
+    }
 }
