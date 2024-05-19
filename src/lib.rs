@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{task::noop_waker_ref, Future};
+use futures::{task::noop_waker_ref, Future, FutureExt};
 use pin_project_lite::pin_project;
 
 /// stream and index
@@ -192,6 +192,7 @@ pin_project! {
     }
 }
 
+/*
 impl<'a, T, O, F: Future<Output = O>> Future for Parsing<'a, T, F> {
     type Output = O;
 
@@ -200,16 +201,22 @@ impl<'a, T, O, F: Future<Output = O>> Future for Parsing<'a, T, F> {
         this.parser.poll(cx)
     }
 }
+*/
 
 impl<'a, T, O, F> Parsing<'a, T, F>
 where
-    F: Future<Output = O> + 'a,
+    F: Future<Output = O> + Unpin + 'a,
 {
     pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
         Self {
             parser: parser(unsafe { input.borrow() }),
             input,
         }
+    }
+
+    pub fn poll(&mut self) -> Poll<O> {
+        let mut cx = Context::from_waker(noop_waker_ref());
+        pin!(&mut self.parser).poll(&mut cx)
     }
 }
 
@@ -431,14 +438,25 @@ mod tests {
             index: 0,
         });
 
-        let mut p = Parsing::new(&mut input, |mut iref: InputRef<u8>| async move {
-            let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
-            dbg!(&alpha0);
-            let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
-            dbg!(&digit);
-            let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+        let mut p = Parsing::new(&mut input, move |mut iref: InputRef<u8>| {
+            async move {
+                let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+                dbg!(&alpha0);
+                let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
+                dbg!(&digit);
+                let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
 
-            (alpha0, digit, alpha2)
+                (alpha0, digit, alpha2)
+            }
+            .boxed_local()
         });
+
+        p.cursor_mut().buf.extend(b"abc");
+        assert!(p.poll().is_pending());
+        p.cursor_mut().buf.extend(b"123");
+        assert!(p.poll().is_pending());
+        p.cursor_mut().buf.extend(b"abc");
+        assert!(p.poll().is_pending());
+        p.cursor_mut().buf.extend(b";");
     }
 }
