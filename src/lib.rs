@@ -1,10 +1,10 @@
 use std::{
     ops::{Deref, DerefMut, Range},
-    pin::{pin, Pin},
+    pin::pin,
     task::{Context, Poll},
 };
 
-use futures::{task::noop_waker_ref, Future, FutureExt};
+use futures::{task::noop_waker_ref, Future};
 use pin_project_lite::pin_project;
 
 /// stream and index
@@ -41,8 +41,7 @@ impl<T> Input<T> {
         }
     }
 
-    /// Don't call .await while holding a borrow of the cursor.
-    pub unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow()
@@ -52,9 +51,7 @@ impl<T> Input<T> {
             &*self.0.get()
         }
     }
-
-    /// Don't call .await while holding a borrow of the cursor.
-    pub unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+    pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow_mut()
@@ -65,57 +62,28 @@ impl<T> Input<T> {
         }
     }
 
-    /// Relatively safe way to access the cursor.
-    /// Safety: DO NOT use self inside the FnOnce.
-    #[inline]
-    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
-        f(unsafe { &self.cursor() })
-    }
-
-    /// Relatively safe way to access the cursor.
-    /// Safety: DO NOT use self inside the FnOnce.
-    #[inline]
-    pub fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
-        f(unsafe { &mut self.cursor_mut() })
+    /// Don't call .await while holding a borrow of the cursor.
+    pub unsafe fn cursor_mut_unsafe(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        #[cfg(debug_assertions)]
+        {
+            self.0.borrow_mut()
+        }
+        #[cfg(not(debug_assertions))]
+        unsafe {
+            &mut *self.0.get()
+        }
     }
 
     pub fn into_inner(self) -> Cursor<T> {
         self.0.into_inner()
     }
 
-    unsafe fn borrow<'a>(&self) -> InputRef<'a, T> {
-        std::mem::transmute(InputRef(self))
-    }
-
+    #[inline]
     fn read(&self) -> impl Future<Output = ()> + '_ {
-        struct Read<'a, T> {
-            input: &'a Input<T>,
-            start_len: usize,
-        }
-
-        impl<T> Future for Read<'_, T> {
-            type Output = ();
-
-            fn poll(
-                self: std::pin::Pin<&mut Self>,
-                _cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Self::Output> {
-                self.input.scope_cursor(|c| {
-                    if c.buf.len() > self.start_len {
-                        std::task::Poll::Ready(())
-                    } else {
-                        std::task::Poll::Pending
-                    }
-                })
-            }
-        }
-
-        Read {
-            input: self,
-            start_len: self.scope_cursor(|c| c.buf.len()),
-        }
+        self.read_n(1)
     }
 
+    #[inline]
     fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
         struct ReadAtLeast<'a, T> {
             input: &'a Input<T>,
@@ -130,19 +98,18 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                self.input.scope_cursor(|c| {
-                    if c.buf.len() >= self.start_len + self.at_least {
-                        std::task::Poll::Ready(())
-                    } else {
-                        std::task::Poll::Pending
-                    }
-                })
+                let c = self.input.cursor();
+                if c.buf.len() >= self.start_len + self.at_least {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
             }
         }
 
         ReadAtLeast {
             input: self,
-            start_len: self.scope_cursor(|c| c.buf.len()),
+            start_len: self.cursor().buf.len(),
             at_least,
         }
     }
@@ -152,12 +119,16 @@ impl<T> Input<T> {
 pub struct InputRef<'a, T>(&'a Input<T>);
 
 impl<'a, T> InputRef<'a, T> {
-    pub fn scope_cursor_mut<O>(&mut self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
-        self.0.scope_cursor_mut(f)
+    /// This crate is safe if you can't bring arguments to outside. I believe it is true.
+    pub fn scope_cursor_mut<O>(&mut self, jail: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+        let mut cursor = unsafe { self.0.cursor_mut_unsafe() };
+        jail(&mut cursor)
     }
 
-    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
-        self.0.scope_cursor(f)
+    /// This crate is safe if you can't bring arguments to outside. I believe it is true.
+    pub fn scope_cursor<O>(&self, jail: impl FnOnce(&Cursor<T>) -> O) -> O {
+        let cursor = self.0.cursor();
+        jail(&cursor)
     }
 
     pub fn read(&mut self) -> impl Future<Output = ()> + '_ {
@@ -193,17 +164,6 @@ pin_project! {
     }
 }
 
-/*
-impl<'a, T, O, F: Future<Output = O>> Future for Parsing<'a, T, F> {
-    type Output = O;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        this.parser.poll(cx)
-    }
-}
-*/
-
 impl<'a, T, O, F> Parsing<'a, T, F, O>
 where
     F: Future<Output = O> + Unpin + 'a,
@@ -231,11 +191,11 @@ where
 
 impl<'a, T, F, O> Parsing<'a, T, F, O> {
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
-        unsafe { self.input.cursor() }
+        self.input.cursor()
     }
 
     pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
-        unsafe { self.input.cursor_mut() }
+        self.input.cursor_mut()
     }
 
     pub fn into_result(self) -> Option<O> {
@@ -285,19 +245,10 @@ pub async fn many0<'a, T>(
     }
 }
 
-pub trait PollNoop: Future + Unpin {
-    // better name?
-    fn poll_noop(&mut self) -> Poll<<Self as Future>::Output> {
-        let mut cx = Context::from_waker(noop_waker_ref());
-
-        pin!(self).poll(&mut cx)
-    }
-}
-
-impl<T: Future + Unpin> PollNoop for T {}
-
 #[cfg(test)]
 mod tests {
+    use futures::FutureExt;
+
     use super::*;
 
     /*
@@ -451,7 +402,7 @@ mod tests {
             index: 0,
         });
 
-        let mut p = Parsing::new(&mut input, move |mut iref: InputRef<u8>| {
+        let mut parsing = Parsing::new(&mut input, move |mut iref: InputRef<u8>| {
             async move {
                 let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
                 dbg!(&alpha0);
@@ -464,15 +415,15 @@ mod tests {
             .boxed_local()
         });
 
-        p.cursor_mut().buf.extend(b"abc");
-        assert!(!p.poll());
-        p.cursor_mut().buf.extend(b"123");
-        assert!(!p.poll());
-        p.cursor_mut().buf.extend(b"abc");
-        assert!(!p.poll());
-        p.cursor_mut().buf.extend(b";");
-        assert!(p.poll());
-        assert_eq!(p.into_result(), Some((0..3, 3..6, 6..9)));
+        parsing.cursor_mut().buf.extend(b"abc");
+        assert!(!parsing.poll());
+        parsing.cursor_mut().buf.extend(b"123");
+        assert!(!parsing.poll());
+        parsing.cursor_mut().buf.extend(b"abc");
+        assert!(!parsing.poll());
+        parsing.cursor_mut().buf.extend(b";");
+        assert!(parsing.poll());
+        assert_eq!(parsing.into_result(), Some((0..3, 3..6, 6..9)));
     }
 
     /*
