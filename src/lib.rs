@@ -23,9 +23,10 @@ use std::{
 use futures::{task::noop_waker_ref, Future};
 use pin_project_lite::pin_project;
 
-/// stream and index
+/// buf and index
 pub struct Cursor<T> {
-    /// stream of items. You must only grow this vector.
+    /// Sequence of items, you may append items to this when you want.
+    /// I think reducing the items of `buf` isn't introduce an unsoundness (only panics) but you don't want to do that.
     pub buf: Vec<T>,
     pub index: usize,
 }
@@ -46,6 +47,7 @@ pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
+    #[inline]
     pub fn new(cursor: Cursor<T>) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -57,6 +59,7 @@ impl<T> Input<T> {
         }
     }
 
+    #[inline]
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
@@ -67,6 +70,7 @@ impl<T> Input<T> {
             &*self.0.get()
         }
     }
+    #[inline]
     pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
@@ -79,7 +83,8 @@ impl<T> Input<T> {
     }
 
     /// Don't call .await while holding a borrow of the cursor.
-    pub unsafe fn cursor_mut_unsafe(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+    #[inline]
+    unsafe fn cursor_mut_unsafe(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow_mut()
@@ -154,6 +159,7 @@ impl<T> Input<T> {
         }
     }
 
+    #[inline]
     pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, F, O>
     where
         P: Parser<'a, T, O, F>,
@@ -168,21 +174,25 @@ pub struct InputRef<'a, T>(&'a Input<T>);
 
 impl<'a, T> InputRef<'a, T> {
     /// This crate is safe if you can't bring arguments to outside. I believe it is true.
+    #[inline]
     pub fn scope_cursor_mut<O>(&mut self, jail: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         let mut cursor = unsafe { self.0.cursor_mut_unsafe() };
         jail(&mut cursor)
     }
 
     /// This crate is safe if you can't bring arguments to outside. I believe it is true.
+    #[inline]
     pub fn scope_cursor<O>(&self, jail: impl FnOnce(&Cursor<T>) -> O) -> O {
         let cursor = self.0.cursor();
         jail(&cursor)
     }
 
+    #[inline]
     pub fn read(&mut self) -> impl Future<Output = ()> + '_ {
         self.0.read()
     }
 
+    #[inline]
     pub fn read_n(&mut self, at_least: usize) -> impl Future<Output = ()> + '_ {
         self.0.read_n(at_least)
     }
@@ -216,6 +226,7 @@ impl<'a, T, O, F> Parsing<'a, T, F, O>
 where
     F: Future<Output = O> + Unpin + 'a,
 {
+    #[inline]
     pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
         // Dupe mutable ref
         Self {
@@ -225,6 +236,7 @@ where
         }
     }
 
+    #[inline]
     pub fn poll(&mut self) -> bool {
         let mut cx = Context::from_waker(noop_waker_ref());
         match pin!(&mut self.future).poll(&mut cx) {
@@ -238,14 +250,17 @@ where
 }
 
 impl<'a, T, F, O> Parsing<'a, T, F, O> {
+    #[inline]
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         self.input.cursor()
     }
 
+    #[inline]
     pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         self.input.cursor_mut()
     }
 
+    #[inline]
     pub fn into_result(self) -> Option<O> {
         self.result
     }
