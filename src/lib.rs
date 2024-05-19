@@ -27,17 +27,19 @@ pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
-    #[cfg(debug_assertions)]
     pub fn new(cursor: Cursor<T>) -> Self {
-        Self(std::cell::RefCell::new(cursor))
-    }
-    #[cfg(not(debug_assertions))]
-    pub fn new(cursor: Cursor<T>) -> Self {
-        Self(std::cell::UnsafeCell::new(cursor))
+        #[cfg(debug_assertions)]
+        {
+            Self(std::cell::RefCell::new(cursor))
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            Self(std::cell::UnsafeCell::new(cursor))
+        }
     }
 
     /// Don't call .await while holding a borrow of the cursor.
-    unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+    pub unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow()
@@ -49,7 +51,7 @@ impl<T> Input<T> {
     }
 
     /// Don't call .await while holding a borrow of the cursor.
-    unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+    pub unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow_mut()
@@ -63,14 +65,14 @@ impl<T> Input<T> {
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
-    fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
+    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
         f(unsafe { &self.cursor() })
     }
 
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
-    fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+    pub fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         f(unsafe { &mut self.cursor_mut() })
     }
 
