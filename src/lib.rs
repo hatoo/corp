@@ -96,14 +96,38 @@ impl<T> Input<T> {
 
     #[inline]
     fn read(&self) -> impl Future<Output = ()> + '_ {
-        self.read_n(1)
+        struct Read<'a, T> {
+            input: &'a Input<T>,
+            start_len: usize,
+        }
+
+        impl<T> Future for Read<'_, T> {
+            type Output = ();
+
+            fn poll(
+                self: std::pin::Pin<&mut Self>,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Self::Output> {
+                let c = self.input.cursor();
+                if c.buf.len() > self.start_len {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            }
+        }
+
+        Read {
+            input: self,
+            start_len: self.cursor().buf.len(),
+        }
     }
 
     #[inline]
     fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
         struct ReadAtLeast<'a, T> {
             input: &'a Input<T>,
-            start_len: usize,
+            start_index: usize,
             at_least: usize,
         }
 
@@ -115,7 +139,7 @@ impl<T> Input<T> {
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
                 let c = self.input.cursor();
-                if c.buf.len() >= self.start_len + self.at_least {
+                if c.buf.len() >= self.start_index + self.at_least {
                     std::task::Poll::Ready(())
                 } else {
                     std::task::Poll::Pending
@@ -125,7 +149,7 @@ impl<T> Input<T> {
 
         ReadAtLeast {
             input: self,
-            start_len: self.cursor().buf.len(),
+            start_index: self.cursor().index,
             at_least,
         }
     }
@@ -267,55 +291,49 @@ mod tests {
 
     use super::*;
 
-    /*
     #[test]
     fn test_read() {
-        let input = Input::new(Cursor {
+        let mut input = Input::new(Cursor {
             buf: vec![1, 2, 3],
             index: 0,
         });
 
-        let mut read = input.read();
-
-        assert!(read.poll_noop().is_pending());
-
-        input.scope_cursor_mut(|c| {
-            c.buf.push(4);
+        let mut p = Parsing::new(&mut input, |mut iref| {
+            async move {
+                iref.read().await;
+            }
+            .boxed_local()
         });
 
-        assert!(read.poll_noop().is_ready());
+        assert!(!p.poll());
+        p.cursor_mut().buf.push(4);
+        assert!(p.poll());
     }
 
     #[test]
     fn test_get3() {
-        async fn get3<T>(input: &Input<T>) {
-            input.read_n(3).await;
-        }
-
-        let input = Input::new(Cursor {
+        let mut input = Input::new(Cursor {
             buf: Vec::new(),
             index: 0,
         });
-        let mut get3 = pin!(get3(&input));
 
-        assert!(get3.poll_noop().is_pending());
-
-        input.scope_cursor_mut(|c| {
-            c.buf.push(1);
+        let mut p = Parsing::new(&mut input, |mut iref| {
+            async move {
+                iref.read_n(3).await;
+            }
+            .boxed_local()
         });
-        assert!(get3.poll_noop().is_pending());
 
-        input.scope_cursor_mut(|c| {
-            c.buf.push(2);
-        });
-        assert!(get3.poll_noop().is_pending());
-
-        input.scope_cursor_mut(|c| {
-            c.buf.push(3);
-        });
-        assert!(get3.poll_noop().is_ready());
+        assert!(!p.poll());
+        p.cursor_mut().buf.push(1);
+        assert!(!p.poll());
+        p.cursor_mut().buf.push(2);
+        assert!(!p.poll());
+        p.cursor_mut().buf.push(3);
+        assert!(p.poll());
     }
 
+    /*
     #[test]
     fn test_many0() {
         let input = Input::new(Cursor {
