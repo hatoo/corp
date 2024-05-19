@@ -153,6 +153,14 @@ impl<T> Input<T> {
             at_least,
         }
     }
+
+    pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, F, O>
+    where
+        P: Parser<'a, T, O, F>,
+        F: Future<Output = O> + Unpin + 'a,
+    {
+        Parsing::new(self, parser)
+    }
 }
 
 #[repr(transparent)]
@@ -298,7 +306,7 @@ mod tests {
             index: 0,
         });
 
-        let mut p = Parsing::new(&mut input, |mut iref| {
+        let mut p = input.start_parsing(|mut iref| {
             async move {
                 iref.read().await;
             }
@@ -317,7 +325,7 @@ mod tests {
             index: 0,
         });
 
-        let mut p = Parsing::new(&mut input, |mut iref| {
+        let mut p = input.start_parsing(|mut iref| {
             async move {
                 iref.read_n(3).await;
             }
@@ -436,7 +444,7 @@ mod tests {
             index: 0,
         });
 
-        let mut parsing = Parsing::new(&mut input, move |mut iref: InputRef<u8>| {
+        let mut parsing = input.start_parsing(move |mut iref: InputRef<u8>| {
             async move {
                 let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
                 dbg!(&alpha0);
