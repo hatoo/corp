@@ -93,7 +93,7 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                self.input.scope_cursor_mut(|c| {
+                self.input.scope_cursor(|c| {
                     if c.stream.len() > self.start_len {
                         std::task::Poll::Ready(())
                     } else {
@@ -123,13 +123,13 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                let borrow = self.input.cursor();
-
-                if borrow.stream.len() >= self.start_len + self.at_least {
-                    std::task::Poll::Ready(())
-                } else {
-                    std::task::Poll::Pending
-                }
+                self.input.scope_cursor(|c| {
+                    if c.stream.len() >= self.start_len + self.at_least {
+                        std::task::Poll::Ready(())
+                    } else {
+                        std::task::Poll::Pending
+                    }
+                })
             }
         }
 
@@ -162,18 +162,19 @@ pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Ran
     let start = input.cursor().index;
 
     loop {
-        let mut cursor = input.cursor_mut();
-
-        for (i, item) in cursor.stream[cursor.index..].iter().enumerate() {
-            if !cond(item) {
-                cursor.index += i;
-                return start..cursor.index;
+        if let Some(r) = input.scope_cursor_mut(|c| {
+            for (i, item) in c.stream[c.index..].iter().enumerate() {
+                if !cond(item) {
+                    c.index += i;
+                    return Some(start..c.index);
+                }
             }
+
+            c.index = c.stream.len();
+            None
+        }) {
+            return r;
         }
-
-        cursor.index = cursor.stream.len();
-
-        drop(cursor);
 
         input.read().await;
     }
@@ -205,7 +206,9 @@ mod tests {
 
         assert!(read.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(4);
+        input.scope_cursor_mut(|c| {
+            c.stream.push(4);
+        });
 
         assert!(read.poll_noop().is_ready());
     }
@@ -226,13 +229,19 @@ mod tests {
 
         assert!(get3.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(1);
+        input.scope_cursor_mut(|c| {
+            c.stream.push(1);
+        });
         assert!(get3.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(2);
+        input.scope_cursor_mut(|c| {
+            c.stream.push(2);
+        });
         assert!(get3.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(3);
+        input.scope_cursor_mut(|c| {
+            c.stream.push(3);
+        });
         assert!(get3.poll_noop().is_ready());
     }
 
@@ -247,16 +256,16 @@ mod tests {
 
         let mut p = pin!(many0(&input, cond));
 
-        input.cursor_mut().stream.push(0);
+        input.scope_cursor_mut(|c| c.stream.push(0));
         assert!(p.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(2);
+        input.scope_cursor_mut(|c| c.stream.push(2));
         assert!(p.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(4);
+        input.scope_cursor_mut(|c| c.stream.push(4));
         assert!(p.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(1);
+        input.scope_cursor_mut(|c| c.stream.push(1));
         assert_eq!(p.poll_noop(), Poll::Ready(0..3));
     }
 
@@ -279,23 +288,25 @@ mod tests {
 
         let mut p = pin!(p);
 
-        input.cursor_mut().stream.push(b'a');
-        input.cursor_mut().stream.push(b'b');
-        input.cursor_mut().stream.push(b'c');
+        input.scope_cursor_mut(|c| {
+            c.stream.extend(b"abc");
+        });
 
         assert!(p.poll_noop().is_pending());
 
-        input.cursor_mut().stream.push(b'1');
-        input.cursor_mut().stream.push(b'2');
-        input.cursor_mut().stream.push(b'3');
+        input.scope_cursor_mut(|c| {
+            c.stream.extend(b"123");
+        });
 
         assert!(p.poll_noop().is_pending());
-        input.cursor_mut().stream.push(b'a');
-        input.cursor_mut().stream.push(b'b');
-        input.cursor_mut().stream.push(b'c');
+        input.scope_cursor_mut(|c| {
+            c.stream.extend(b"def");
+        });
 
         assert!(p.poll_noop().is_pending());
-        input.cursor_mut().stream.push(b';');
+        input.scope_cursor_mut(|c| {
+            c.stream.push(b';');
+        });
 
         assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
     }
