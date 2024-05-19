@@ -62,6 +62,20 @@ impl<T> Input<T> {
         unsafe { &mut *self.0.get() }
     }
 
+    /// ```compile_fail
+    ///
+    /// let input = Input::new(Cursor {
+    ///     stream: Vec::<u8>::new(),
+    ///    index: 0,
+    /// });
+    /// input.scope_cursor(|c| {
+    ///        input.cursor_mut().stream.push(1);
+    /// });
+    /// ```
+    pub fn scope_cursor<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O + 'static) -> O {
+        f(&mut self.cursor_mut())
+    }
+
     pub fn into_inner(self) -> Cursor<T> {
         self.0.into_inner()
     }
