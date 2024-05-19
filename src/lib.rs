@@ -208,8 +208,9 @@ where
     F: Future<Output = O> + Unpin + 'a,
 {
     pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
+        // Dupe mutable ref
         Self {
-            future: parser(unsafe { input.borrow() }),
+            future: parser(InputRef(unsafe { std::mem::transmute(&mut *input) })),
             input,
         }
     }
