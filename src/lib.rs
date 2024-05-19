@@ -458,5 +458,6 @@ mod tests {
         p.cursor_mut().buf.extend(b"abc");
         assert!(p.poll().is_pending());
         p.cursor_mut().buf.extend(b";");
+        assert_eq!(p.poll(), Poll::Ready((0..3, 3..6, 6..9)));
     }
 }
