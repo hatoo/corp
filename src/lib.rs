@@ -28,6 +28,7 @@ pub struct Cursor<T> {
     /// Sequence of items, you may append items to this when you want.
     /// I think reducing the items of `buf` isn't introduce an unsoundness (only may panics) but you don't want to do that.
     pub buf: Vec<T>,
+    /// Some of parsers in this crate assumes index <= buf.len().
     pub index: usize,
 }
 
