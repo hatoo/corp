@@ -62,17 +62,10 @@ impl<T> Input<T> {
         unsafe { &mut *self.0.get() }
     }
 
-    /// ```compile_fail
-    ///
-    /// let input = Input::new(Cursor {
-    ///     stream: Vec::<u8>::new(),
-    ///    index: 0,
-    /// });
-    /// input.scope_cursor(|c| {
-    ///        input.cursor_mut().stream.push(1);
-    /// });
-    /// ```
-    pub fn scope_cursor<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O + 'static) -> O {
+    /// Relatively safe way to access the cursor.
+    /// Safety: DO NOT use self inside the FnOnce.
+    #[inline]
+    pub fn scope_cursor<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         f(&mut self.cursor_mut())
     }
 
@@ -147,15 +140,15 @@ where
 {
     input.read_n(tag.len()).await;
 
-    let mut cursor = input.cursor_mut();
-
-    if cursor.remaining().starts_with(tag) {
-        let start = cursor.index;
-        cursor.index += tag.len();
-        Ok(start..cursor.index)
-    } else {
-        Err(())
-    }
+    input.scope_cursor(|cursor| {
+        if cursor.remaining().starts_with(tag) {
+            let start = cursor.index;
+            cursor.index += tag.len();
+            Ok(start..cursor.index)
+        } else {
+            Err(())
+        }
+    })
 }
 
 pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
