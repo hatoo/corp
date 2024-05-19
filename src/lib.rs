@@ -65,7 +65,14 @@ impl<T> Input<T> {
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
-    pub fn scope_cursor<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
+        f(&self.cursor())
+    }
+
+    /// Relatively safe way to access the cursor.
+    /// Safety: DO NOT use self inside the FnOnce.
+    #[inline]
+    pub fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         f(&mut self.cursor_mut())
     }
 
@@ -86,13 +93,13 @@ impl<T> Input<T> {
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                let borrow = self.input.cursor();
-
-                if borrow.stream.len() > self.start_len {
-                    std::task::Poll::Ready(())
-                } else {
-                    std::task::Poll::Pending
-                }
+                self.input.scope_cursor_mut(|c| {
+                    if c.stream.len() > self.start_len {
+                        std::task::Poll::Ready(())
+                    } else {
+                        std::task::Poll::Pending
+                    }
+                })
             }
         }
 
@@ -140,7 +147,7 @@ where
 {
     input.read_n(tag.len()).await;
 
-    input.scope_cursor(|cursor| {
+    input.scope_cursor_mut(|cursor| {
         if cursor.remaining().starts_with(tag) {
             let start = cursor.index;
             cursor.index += tag.len();
