@@ -356,101 +356,31 @@ mod tests {
         assert!(p.poll());
     }
 
-    /*
     #[test]
     fn test_many0() {
-        let input = Input::new(Cursor {
+        let mut input = Input::new(Cursor {
             buf: Vec::new(),
             index: 0,
         });
 
-        let cond = move |x: &i32| *x % 2 == 0;
+        let mut p = input.start_parsing(|mut iref| {
+            async move { many0(&mut iref, |x| *x % 2 == 0).await }.boxed_local()
+        });
 
-        let mut iref = InputRef(&input);
+        p.cursor_mut().buf.push(0);
+        assert!(!p.poll());
 
-        let mut p = pin!(many0(&mut iref, cond));
+        p.cursor_mut().buf.push(2);
+        assert!(!p.poll());
 
-        input.scope_cursor_mut(|c| c.buf.push(0));
-        assert!(p.poll_noop().is_pending());
+        p.cursor_mut().buf.push(4);
+        assert!(!p.poll());
 
-        input.scope_cursor_mut(|c| c.buf.push(2));
-        assert!(p.poll_noop().is_pending());
+        p.cursor_mut().buf.push(1);
+        assert!(p.poll());
 
-        input.scope_cursor_mut(|c| c.buf.push(4));
-        assert!(p.poll_noop().is_pending());
-
-        input.scope_cursor_mut(|c| c.buf.push(1));
-        assert_eq!(p.poll_noop(), Poll::Ready(0..3));
+        assert_eq!(p.into_result(), Some(0..3));
     }
-
-    #[test]
-    fn test_combined() {
-        let input = Input::new(Cursor {
-            buf: Vec::new(),
-            index: 0,
-        });
-
-        let mut iref = input.borrow();
-
-        let p = async {
-            let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
-            dbg!(&alpha0);
-            let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
-            dbg!(&digit);
-            let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
-
-            (alpha0, digit, alpha2)
-        };
-
-        let mut p = pin!(p);
-
-        input.scope_cursor_mut(|c| {
-            c.buf.extend(b"abc");
-        });
-
-        assert!(p.poll_noop().is_pending());
-
-        input.scope_cursor_mut(|c| {
-            c.buf.extend(b"123");
-        });
-
-        assert!(p.poll_noop().is_pending());
-        input.scope_cursor_mut(|c| {
-            c.buf.extend(b"def");
-        });
-
-        assert!(p.poll_noop().is_pending());
-        input.scope_cursor_mut(|c| {
-            c.buf.push(b';');
-        });
-
-        assert_eq!(p.poll_noop(), Poll::Ready((0..3, 3..6, 6..9)));
-    }
-
-    #[test]
-    #[should_panic]
-    #[cfg(debug_assertions)]
-    fn test_bad_borrow() {
-        async fn bad(input: &Input<u8>) -> usize {
-            let cursor = unsafe { input.cursor() };
-            // You must not call read().await while borrowing cursor.
-            // Can we ensure that it can't happen?
-            input.read().await;
-            cursor.remaining().len()
-        }
-
-        let input = Input::new(Cursor {
-            buf: Vec::new(),
-            index: 0,
-        });
-
-        let mut p = pin!(bad(&input));
-
-        assert!(p.poll_noop().is_pending());
-
-        unsafe { input.cursor_mut() }.buf.push(1);
-    }
-    */
 
     #[test]
     fn test_parsing() {
