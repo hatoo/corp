@@ -21,9 +21,11 @@ impl<T> Cursor<T> {
 }
 
 #[cfg(debug_assertions)]
+#[repr(transparent)]
 pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 
 #[cfg(not(debug_assertions))]
+#[repr(transparent)]
 pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
@@ -145,6 +147,7 @@ impl<T> Input<T> {
     }
 }
 
+#[repr(transparent)]
 pub struct InputRef<'a, T>(&'a Input<T>);
 
 impl<'a, T> InputRef<'a, T> {
