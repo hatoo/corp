@@ -1,3 +1,19 @@
+/// ```compile_fail
+/// use futures::FutureExt;
+/// use stap::{Input, Cursor, Parsing};
+///
+/// let mut input = Input::new(Cursor {
+///     buf: Vec::<u8>::new(),
+///     index: 0,
+/// });
+///
+/// let mut leak = None;
+///
+/// let mut parsing = Parsing::new(&mut input, move |mut iref| async {
+///     leak = Some(iref);
+/// }.boxed_local());
+///
+/// ```
 use std::{
     ops::{Deref, DerefMut, Range},
     pin::pin,
