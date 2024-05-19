@@ -37,7 +37,7 @@ impl<T> Input<T> {
     }
 
     /// Don't call .await while holding a borrow of the cursor.
-    pub unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+    unsafe fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow()
@@ -49,7 +49,7 @@ impl<T> Input<T> {
     }
 
     /// Don't call .await while holding a borrow of the cursor.
-    pub unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+    unsafe fn cursor_mut(&self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
             self.0.borrow_mut()
@@ -63,14 +63,14 @@ impl<T> Input<T> {
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
-    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
+    fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
         f(unsafe { &self.cursor() })
     }
 
     /// Relatively safe way to access the cursor.
     /// Safety: DO NOT use self inside the FnOnce.
     #[inline]
-    pub fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+    fn scope_cursor_mut<O>(&self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         f(unsafe { &mut self.cursor_mut() })
     }
 
@@ -78,7 +78,11 @@ impl<T> Input<T> {
         self.0.into_inner()
     }
 
-    pub fn read(&self) -> impl Future<Output = ()> + '_ {
+    pub fn borrow(&self) -> InputRef<'_, T> {
+        InputRef(self)
+    }
+
+    fn read(&self) -> impl Future<Output = ()> + '_ {
         struct Read<'a, T> {
             input: &'a Input<T>,
             start_len: usize,
@@ -107,7 +111,7 @@ impl<T> Input<T> {
         }
     }
 
-    pub fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
+    fn read_n(&self, at_least: usize) -> impl Future<Output = ()> + '_ {
         struct ReadAtLeast<'a, T> {
             input: &'a Input<T>,
             start_len: usize,
@@ -139,7 +143,27 @@ impl<T> Input<T> {
     }
 }
 
-pub async fn tag<T>(input: &Input<T>, tag: &[T]) -> Result<Range<usize>, ()>
+pub struct InputRef<'a, T>(&'a Input<T>);
+
+impl<'a, T> InputRef<'a, T> {
+    pub fn scope_cursor_mut<O>(&mut self, f: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+        self.0.scope_cursor_mut(f)
+    }
+
+    pub fn scope_cursor<O>(&self, f: impl FnOnce(&Cursor<T>) -> O) -> O {
+        self.0.scope_cursor(f)
+    }
+
+    pub fn read(&mut self) -> impl Future<Output = ()> + '_ {
+        self.0.read()
+    }
+
+    pub fn read_n(&mut self, at_least: usize) -> impl Future<Output = ()> + '_ {
+        self.0.read_n(at_least)
+    }
+}
+
+pub async fn tag<'a, T>(input: &mut InputRef<'a, T>, tag: &[T]) -> Result<Range<usize>, ()>
 where
     T: PartialEq,
 {
@@ -156,7 +180,10 @@ where
     })
 }
 
-pub async fn many0<T>(input: &Input<T>, mut cond: impl FnMut(&T) -> bool) -> Range<usize> {
+pub async fn many0<'a, T>(
+    input: &mut InputRef<'a, T>,
+    mut cond: impl FnMut(&T) -> bool,
+) -> Range<usize> {
     let start = input.scope_cursor(|c| c.index);
 
     loop {
@@ -250,7 +277,9 @@ mod tests {
 
         let cond = move |x: &i32| *x % 2 == 0;
 
-        let mut p = pin!(many0(&input, cond));
+        let mut iref = InputRef(&input);
+
+        let mut p = pin!(many0(&mut iref, cond));
 
         input.scope_cursor_mut(|c| c.buf.push(0));
         assert!(p.poll_noop().is_pending());
@@ -272,12 +301,14 @@ mod tests {
             index: 0,
         });
 
+        let mut iref = input.borrow();
+
         let p = async {
-            let alpha0 = many0(&input, |x: &u8| x.is_ascii_alphabetic()).await;
+            let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
             dbg!(&alpha0);
-            let digit = many0(&input, |x: &u8| x.is_ascii_digit()).await;
+            let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
             dbg!(&digit);
-            let alpha2 = many0(&input, |x: &u8| x.is_ascii_alphabetic()).await;
+            let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
 
             (alpha0, digit, alpha2)
         };
