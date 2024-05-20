@@ -212,7 +212,9 @@ where
     pub fn new<P: Parser<'a, T, O, F>>(input: &'a mut Input<T>, parser: P) -> Self {
         // Dupe mutable ref
         Self {
-            future: parser(InputRef(unsafe { std::mem::transmute(&mut *input) })),
+            future: parser(InputRef(unsafe {
+                std::mem::transmute::<&mut Input<T>, &Input<T>>(&mut *input)
+            })),
             result: None,
             input,
         }
@@ -278,7 +280,7 @@ where
         F: 'a,
     {
         self.future = Some(parser(InputRef(unsafe {
-            std::mem::transmute(&self.input)
+            std::mem::transmute::<&Input<T>, &Input<T>>(&self.input)
         })));
     }
 
