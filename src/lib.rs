@@ -160,7 +160,7 @@ impl<T> Input<T> {
     }
 
     #[inline]
-    pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, F, O>
+    pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, O, F>
     where
         P: Parser<'a, T, O, F>,
         F: Future<Output = O> + Unpin + 'a,
@@ -213,13 +213,13 @@ where
 {
 }
 
-pub struct Parsing<'a, T, F, O> {
+pub struct Parsing<'a, T, O, F> {
     input: &'a mut Input<T>,
     result: Option<O>,
     future: F,
 }
 
-impl<'a, T, O, F> Parsing<'a, T, F, O>
+impl<'a, T, O, F> Parsing<'a, T, O, F>
 where
     F: Future<Output = O> + Unpin + 'a,
 {
@@ -246,7 +246,7 @@ where
     }
 }
 
-impl<'a, T, F, O> Parsing<'a, T, F, O> {
+impl<'a, T, O, F> Parsing<'a, T, O, F> {
     #[inline]
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         self.input.cursor()
