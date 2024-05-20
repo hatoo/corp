@@ -199,7 +199,7 @@ where
 }
 
 pub struct Parsing<'a, T, O, F> {
-    input: &'a mut Input<T>,
+    input: &'a Input<T>,
     result: Option<O>,
     future: F,
 }
@@ -241,7 +241,7 @@ impl<'a, T, O, F> Parsing<'a, T, O, F> {
 
     #[inline]
     pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
-        self.input.cursor_mut()
+        unsafe { self.input.cursor_mut_unsafe() }
     }
 
     #[inline]
