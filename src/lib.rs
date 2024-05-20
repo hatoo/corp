@@ -267,36 +267,52 @@ impl<'a, T, F, O> Parsing<'a, T, F, O> {
     }
 }
 
-pub struct ParsingInput<'a, T, F, O> {
-    input: Input<T>,
-    parsing: Option<Parsing<'a, T, F, O>>,
+pin_project! {
+    pub struct ParsingInput<T, F, O> {
+        input: Input<T>,
+        result: Option<O>,
+        #[pin]
+        future: Option<F>,
+    }
 }
 
-impl<'a, T, F, O> ParsingInput<'a, T, F, O>
+impl<T, F, O> ParsingInput<T, F, O>
 where
-    T: 'a,
-    F: Future<Output = O> + Unpin + 'a,
+    F: Future<Output = O>,
 {
     pub fn new(input: Input<T>) -> Self {
         Self {
             input,
-            parsing: None,
+            result: None,
+            future: None,
         }
     }
 
-    pub fn start_parsing<P: Parser<'a, T, O, F>>(&mut self, parser: P) {
-        self.parsing = Some(Parsing::new(
-            unsafe { std::mem::transmute(&mut self.input) },
-            parser,
-        ));
+    pub fn start_parsing<P: for<'a> Parser<'a, T, O, F>>(&mut self, parser: P) {
+        self.future = Some(parser(InputRef(&self.input)));
     }
 
-    pub fn poll(&mut self) -> bool {
-        self.parsing.as_mut().map_or(false, |p| p.poll())
+    pub fn poll(&mut self) -> bool
+    where
+        F: Unpin,
+    {
+        if let Some(future) = self.future.as_mut() {
+            let mut cx = Context::from_waker(noop_waker_ref());
+            match pin!(future).poll(&mut cx) {
+                Poll::Ready(result) => {
+                    self.result = Some(result);
+                    self.future = None;
+                    true
+                }
+                Poll::Pending => false,
+            }
+        } else {
+            false
+        }
     }
 
     pub fn result(&mut self) -> Option<O> {
-        self.parsing.take().and_then(|p| p.into_result())
+        self.result.take()
     }
 }
 
