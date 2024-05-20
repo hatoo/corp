@@ -254,10 +254,7 @@ pub struct ParsingInput<T, F, O> {
     future: Option<F>,
 }
 
-impl<T, F, O> ParsingInput<T, F, O>
-where
-    F: Future<Output = O>,
-{
+impl<T, F, O> ParsingInput<T, F, O> {
     pub fn new(input: Input<T>) -> Self {
         Self {
             input,
@@ -266,6 +263,15 @@ where
         }
     }
 
+    pub fn result_mut(&mut self) -> Option<&mut O> {
+        self.result.as_mut()
+    }
+}
+
+impl<T, F, O> ParsingInput<T, F, O>
+where
+    F: Future<Output = O>,
+{
     pub fn start_parsing<'a, P: Parser<'a, T, O, F>>(&mut self, parser: P)
     where
         T: 'a,
@@ -293,10 +299,6 @@ where
         } else {
             false
         }
-    }
-
-    pub fn result_mut(&mut self) -> Option<&mut O> {
-        self.result.as_mut()
     }
 }
 
