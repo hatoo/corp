@@ -1,10 +1,11 @@
 use std::{
+    future::Future,
     ops::{Deref, DerefMut, Range},
-    pin::{pin, Pin},
+    pin::Pin,
     task::{Context, Poll},
 };
 
-use futures::{task::noop_waker_ref, Future};
+use futures::task::noop_waker_ref;
 
 /// buf and index
 pub struct Cursor<T> {
