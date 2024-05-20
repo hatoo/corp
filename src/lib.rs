@@ -267,6 +267,39 @@ impl<'a, T, F, O> Parsing<'a, T, F, O> {
     }
 }
 
+pub struct ParsingInput<'a, T, F, O> {
+    input: Input<T>,
+    parsing: Option<Parsing<'a, T, F, O>>,
+}
+
+impl<'a, T, F, O> ParsingInput<'a, T, F, O>
+where
+    T: 'a,
+    F: Future<Output = O> + Unpin + 'a,
+{
+    pub fn new(input: Input<T>) -> Self {
+        Self {
+            input,
+            parsing: None,
+        }
+    }
+
+    pub fn start_parsing<P: Parser<'a, T, O, F>>(&mut self, parser: P) {
+        self.parsing = Some(Parsing::new(
+            unsafe { std::mem::transmute(&mut self.input) },
+            parser,
+        ));
+    }
+
+    pub fn poll(&mut self) -> bool {
+        self.parsing.as_mut().map_or(false, |p| p.poll())
+    }
+
+    pub fn result(&mut self) -> Option<O> {
+        self.parsing.take().and_then(|p| p.into_result())
+    }
+}
+
 pub async fn tag<'a, T>(input: &mut InputRef<'a, T>, tag: &[T]) -> Result<Range<usize>, ()>
 where
     T: PartialEq,
@@ -412,5 +445,23 @@ mod tests {
         parsing.cursor_mut().buf.extend(b";");
         assert!(parsing.poll());
         assert_eq!(parsing.into_result(), Some((0..3, 3..6, 6..9)));
+    }
+
+    #[test]
+    fn test_parsing_input() {
+        let mut pinput = ParsingInput::new(Input::new(Cursor {
+            buf: Vec::<u8>::new(),
+            index: 0,
+        }));
+
+        pinput.start_parsing(|mut iref| async move { iref }.boxed_local());
+
+        pinput.poll();
+
+        let iref = pinput.result().unwrap();
+
+        drop(pinput);
+
+        iref.scope_cursor(|c| dbg!(c.index));
     }
 }
