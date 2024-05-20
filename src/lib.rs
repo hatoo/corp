@@ -473,10 +473,10 @@ mod tests {
 
         pinput.poll();
 
-        let out = pinput.result_mut().unwrap();
+        let _out = pinput.result_mut().unwrap();
 
         drop(pinput);
 
-        // out;
+        // _out;
     }
 }
