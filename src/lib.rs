@@ -288,8 +288,14 @@ where
         }
     }
 
-    pub fn start_parsing<P: for<'a> Parser<'a, T, O, F>>(&mut self, parser: P) {
-        self.future = Some(parser(InputRef(&self.input)));
+    pub fn start_parsing<'a, P: Parser<'a, T, O, F>>(&mut self, parser: P)
+    where
+        T: 'a,
+        F: 'a,
+    {
+        self.future = Some(parser(InputRef(unsafe {
+            std::mem::transmute(&self.input)
+        })));
     }
 
     pub fn poll(&mut self) -> bool
