@@ -21,7 +21,6 @@ use std::{
 };
 
 use futures::{task::noop_waker_ref, Future};
-use pin_project_lite::pin_project;
 
 /// buf and index
 pub struct Cursor<T> {
@@ -214,13 +213,10 @@ where
 {
 }
 
-pin_project! {
-    pub struct Parsing<'a, T, F, O> {
-        input: &'a mut Input<T>,
-        result: Option<O>,
-        #[pin]
-        future: F,
-    }
+pub struct Parsing<'a, T, F, O> {
+    input: &'a mut Input<T>,
+    result: Option<O>,
+    future: F,
 }
 
 impl<'a, T, O, F> Parsing<'a, T, F, O>
@@ -267,13 +263,10 @@ impl<'a, T, F, O> Parsing<'a, T, F, O> {
     }
 }
 
-pin_project! {
-    pub struct ParsingInput<T, F, O> {
-        input: Input<T>,
-        result: Option<O>,
-        #[pin]
-        future: Option<F>,
-    }
+pub struct ParsingInput<T, F, O> {
+    input: Input<T>,
+    result: Option<O>,
+    future: Option<F>,
 }
 
 impl<T, F, O> ParsingInput<T, F, O>
