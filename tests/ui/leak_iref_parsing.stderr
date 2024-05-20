@@ -1,0 +1,12 @@
+error[E0505]: cannot move out of `leak` because it is borrowed
+  --> tests/ui/leak_iref_parsing.rs:22:10
+   |
+12 |     let mut p = Parsing::new(&mut input, |iref| {
+   |                                          ------ borrow of `leak` occurs here
+13 |         let leak_mut = &mut leak;
+   |                             ---- borrow occurs due to use in closure
+...
+22 |     drop(leak);
+   |          ^^^^ move out of `leak` occurs here
+23 | }
+   | - borrow might be used here, when `p` is dropped and runs the destructor for type `Parsing<'_, u8, (), Pin<Box<dyn futures::Future<Output = ()>>>>`
