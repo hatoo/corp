@@ -1,6 +1,6 @@
 use std::{
     ops::{Deref, DerefMut, Range},
-    pin::pin,
+    pin::{pin, Pin},
     task::{Context, Poll},
 };
 
@@ -220,7 +220,7 @@ where
     #[inline]
     pub fn poll(&mut self) -> bool {
         let mut cx = Context::from_waker(noop_waker_ref());
-        match pin!(&mut self.future).poll(&mut cx) {
+        match Pin::new(&mut self.future).poll(&mut cx) {
             Poll::Ready(result) => {
                 self.result = Some(result);
                 true
@@ -281,7 +281,7 @@ where
     {
         if let Some(future) = self.future.as_mut() {
             let mut cx = Context::from_waker(noop_waker_ref());
-            match pin!(future).poll(&mut cx) {
+            match Pin::new(future).poll(&mut cx) {
                 Poll::Ready(result) => {
                     self.result = Some(result);
                     self.future = None;
