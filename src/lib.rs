@@ -317,8 +317,8 @@ where
         }
     }
 
-    pub fn result(&mut self) -> Option<O> {
-        self.result.take()
+    pub fn result_mut(&mut self) -> Option<&mut O> {
+        self.result.as_mut()
     }
 }
 
@@ -476,14 +476,14 @@ mod tests {
             index: 0,
         }));
 
-        pinput.start_parsing(|mut iref| async move { iref }.boxed_local());
+        pinput.start_parsing(|iref| async { iref }.boxed_local());
 
         pinput.poll();
 
-        let iref = pinput.result().unwrap();
+        let out = pinput.result_mut().unwrap();
 
         drop(pinput);
 
-        iref.scope_cursor(|c| dbg!(c.index));
+        // out;
     }
 }
