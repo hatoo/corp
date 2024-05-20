@@ -1,0 +1,12 @@
+error[E0505]: cannot move out of `leak` because it is borrowed
+  --> tests/ui/leak_iref_parsing_input.rs:24:10
+   |
+14 |     pi.start_parsing(|iref| {
+   |                      ------ borrow of `leak` occurs here
+15 |         let leak_mut = &mut leak;
+   |                             ---- borrow occurs due to use in closure
+...
+24 |     drop(leak);
+   |          ^^^^ move out of `leak` occurs here
+25 | }
+   | - borrow might be used here, when `pi` is dropped and runs the destructor for type `ParsingInput<u8, Pin<Box<dyn futures::Future<Output = ()>>>, ()>`
