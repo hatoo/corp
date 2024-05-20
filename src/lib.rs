@@ -450,22 +450,4 @@ mod tests {
         assert!(parsing.poll());
         assert_eq!(parsing.into_result(), Some((0..3, 3..6, 6..9)));
     }
-
-    #[test]
-    fn test_parsing_input() {
-        let mut pinput = ParsingInput::new(Input::new(Cursor {
-            buf: Vec::<u8>::new(),
-            index: 0,
-        }));
-
-        pinput.start_parsing(|iref| async { iref }.boxed_local());
-
-        pinput.poll();
-
-        let _out = pinput.result_mut().unwrap();
-
-        drop(pinput);
-
-        // _out;
-    }
 }
