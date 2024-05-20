@@ -250,13 +250,13 @@ impl<'a, T, O, F> Parsing<'a, T, O, F> {
     }
 }
 
-pub struct ParsingInput<T, F, O> {
+pub struct ParsingInput<T, O, F> {
     input: Input<T>,
     result: Option<O>,
     future: Option<F>,
 }
 
-impl<T, F, O> ParsingInput<T, F, O> {
+impl<T, O, F> ParsingInput<T, O, F> {
     pub fn new(input: Input<T>) -> Self {
         Self {
             input,
@@ -270,7 +270,7 @@ impl<T, F, O> ParsingInput<T, F, O> {
     }
 }
 
-impl<T, F, O> ParsingInput<T, F, O>
+impl<T, O, F> ParsingInput<T, O, F>
 where
     F: Future<Output = O>,
 {
