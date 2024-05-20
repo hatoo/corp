@@ -265,8 +265,22 @@ impl<T, O, F> ParsingInput<T, O, F> {
         }
     }
 
+    #[inline]
+    pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
+        self.input.cursor()
+    }
+
+    #[inline]
+    pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
+        self.input.cursor_mut()
+    }
+
     pub fn result_mut(&mut self) -> Option<&mut O> {
         self.result.as_mut()
+    }
+
+    pub fn into_input(self) -> Input<T> {
+        self.input
     }
 }
 
