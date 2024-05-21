@@ -21,6 +21,10 @@ impl<T> Cursor<T> {
     pub fn remaining(&self) -> &[T] {
         &self.buf[self.index..]
     }
+
+    fn sanity_check(&self) -> bool {
+        self.index <= self.buf.len()
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -167,6 +171,7 @@ impl<'a, T> InputRef<'a, T> {
     #[inline]
     pub fn scope_cursor_mut<O>(&mut self, jail: impl FnOnce(&mut Cursor<T>) -> O) -> O {
         let mut cursor = unsafe { self.0.cursor_mut_unsafe() };
+        debug_assert!(cursor.sanity_check());
         jail(&mut cursor)
     }
 
@@ -174,6 +179,7 @@ impl<'a, T> InputRef<'a, T> {
     #[inline]
     pub fn scope_cursor<O>(&self, jail: impl FnOnce(&Cursor<T>) -> O) -> O {
         let cursor = self.0.cursor();
+        debug_assert!(cursor.sanity_check());
         jail(&cursor)
     }
 
