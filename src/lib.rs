@@ -153,6 +153,7 @@ impl<T> Input<T> {
         Parsing::new(self, parser)
     }
 
+    #[inline]
     pub fn into_parsing_input<O, F>(self) -> ParsingInput<T, O, F> {
         ParsingInput::<T, O, F>::new(self)
     }
@@ -279,10 +280,12 @@ impl<T, O, F> ParsingInput<T, O, F> {
         self.input.cursor_mut()
     }
 
+    #[inline]
     pub fn result_mut(&mut self) -> Option<&mut O> {
         self.result.as_mut()
     }
 
+    #[inline]
     pub fn into_input(self) -> Input<T> {
         self.input
     }
@@ -292,6 +295,7 @@ impl<T, O, F> ParsingInput<T, O, F>
 where
     F: Future<Output = O>,
 {
+    #[inline]
     pub fn start_parsing<'a, P: Parser<'a, T, O, F>>(&mut self, parser: P)
     where
         T: 'a,
@@ -302,6 +306,7 @@ where
         })));
     }
 
+    #[inline]
     pub fn poll(&mut self) -> bool
     where
         F: Unpin,
