@@ -163,24 +163,55 @@ impl<T> Input<T> {
     }
 }
 
+pub struct CursorRef<'a, T> {
+    cursor: &'a mut Cursor<T>,
+}
+
+// you can't get &mut buf
+impl<'a, T> CursorRef<'a, T> {
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.cursor.index
+    }
+
+    #[inline]
+    pub fn index_mut(&mut self) -> &mut usize {
+        &mut self.cursor.index
+    }
+
+    #[inline]
+    pub fn remaining(&self) -> &[T] {
+        self.cursor.remaining()
+    }
+
+    #[inline]
+    pub fn buf(&self) -> &[T] {
+        &self.cursor.buf
+    }
+}
+
 #[repr(transparent)]
 pub struct InputRef<'a, T>(&'a Input<T>);
 
 impl<'a, T> InputRef<'a, T> {
     /// This crate is safe if you can't bring arguments to outside. I believe it is true.
     #[inline]
-    pub fn scope_cursor_mut<O>(&mut self, jail: impl FnOnce(&mut Cursor<T>) -> O) -> O {
+    pub fn scope_cursor_mut<O>(&mut self, jail: impl FnOnce(&mut CursorRef<T>) -> O) -> O {
         let mut cursor = unsafe { self.0.cursor_mut_unsafe() };
         debug_assert!(cursor.sanity_check());
-        jail(&mut cursor)
+        jail(&mut CursorRef {
+            cursor: &mut cursor,
+        })
     }
 
     /// This crate is safe if you can't bring arguments to outside. I believe it is true.
     #[inline]
-    pub fn scope_cursor<O>(&self, jail: impl FnOnce(&Cursor<T>) -> O) -> O {
-        let cursor = self.0.cursor();
+    pub fn scope_cursor<O>(&self, jail: impl FnOnce(&CursorRef<T>) -> O) -> O {
+        let mut cursor = unsafe { self.0.cursor_mut_unsafe() };
         debug_assert!(cursor.sanity_check());
-        jail(&cursor)
+        jail(&CursorRef {
+            cursor: &mut cursor,
+        })
     }
 
     #[inline]
@@ -341,9 +372,9 @@ where
 
     input.scope_cursor_mut(|cursor| {
         if cursor.remaining().starts_with(tag) {
-            let start = cursor.index;
-            cursor.index += tag.len();
-            Ok(start..cursor.index)
+            let start = cursor.index();
+            *cursor.index_mut() += tag.len();
+            Ok(start..cursor.index())
         } else {
             Err(())
         }
@@ -354,18 +385,19 @@ pub async fn many0<'a, T>(
     input: &mut InputRef<'a, T>,
     mut cond: impl FnMut(&T) -> bool,
 ) -> Range<usize> {
-    let start = input.scope_cursor(|c| c.index);
+    let start = input.scope_cursor(|c| c.index());
 
     loop {
         if let Some(r) = input.scope_cursor_mut(|c| {
-            for (i, item) in c.buf[c.index..].iter().enumerate() {
+            for (i, item) in c.remaining().iter().enumerate() {
                 if !cond(item) {
-                    c.index += i;
-                    return Some(start..c.index);
+                    *c.index_mut() += i;
+                    return Some(start..c.index());
                 }
             }
 
-            c.index = c.buf.len();
+            let len = c.buf().len();
+            *c.index_mut() = len;
             None
         }) {
             return r;
