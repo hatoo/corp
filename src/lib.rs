@@ -152,6 +152,10 @@ impl<T> Input<T> {
     {
         Parsing::new(self, parser)
     }
+
+    pub fn into_parsing_input<O, F>(self) -> ParsingInput<T, O, F> {
+        ParsingInput::<T, O, F>::new(self)
+    }
 }
 
 #[repr(transparent)]
@@ -463,5 +467,38 @@ mod tests {
         parsing.cursor_mut().buf.extend(b";");
         assert!(parsing.poll());
         assert_eq!(parsing.into_result(), Some((0..3, 3..6, 6..9)));
+    }
+
+    #[test]
+    fn test_parsing_input() {
+        let input = Input::new(Cursor {
+            buf: Vec::new(),
+            index: 0,
+        });
+
+        let mut parsing_input = input.into_parsing_input();
+
+        parsing_input.start_parsing(move |mut iref: InputRef<u8>| {
+            async move {
+                let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+                dbg!(&alpha0);
+                let digit = many0(&mut iref, |x: &u8| x.is_ascii_digit()).await;
+                dbg!(&digit);
+                let alpha2 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
+
+                (alpha0, digit, alpha2)
+            }
+            .boxed_local()
+        });
+
+        parsing_input.cursor_mut().buf.extend(b"abc");
+        assert!(!parsing_input.poll());
+        parsing_input.cursor_mut().buf.extend(b"123");
+        assert!(!parsing_input.poll());
+        parsing_input.cursor_mut().buf.extend(b"abc");
+        assert!(!parsing_input.poll());
+        parsing_input.cursor_mut().buf.extend(b";");
+        assert!(parsing_input.poll());
+        assert_eq!(parsing_input.result_mut(), Some(&mut (0..3, 3..6, 6..9)));
     }
 }
