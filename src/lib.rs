@@ -359,7 +359,7 @@ where
     }
 }
 
-pub async fn just<'a, T>(input: &mut InputRef<'a, T>, t: T) -> Result<usize, ()>
+pub async fn just<T>(input: &mut InputRef<'_, T>, t: T) -> Result<usize, ()>
 where
     T: PartialEq,
 {
@@ -375,7 +375,7 @@ where
     })
 }
 
-pub async fn tag<'a, T>(input: &mut InputRef<'a, T>, tag: &[T]) -> Result<Range<usize>, ()>
+pub async fn tag<T>(input: &mut InputRef<'_, T>, tag: &[T]) -> Result<Range<usize>, ()>
 where
     T: PartialEq,
 {
@@ -392,8 +392,8 @@ where
     })
 }
 
-pub async fn many0<'a, T>(
-    input: &mut InputRef<'a, T>,
+pub async fn many0<T>(
+    input: &mut InputRef<'_, T>,
     mut cond: impl FnMut(&T) -> bool,
 ) -> Range<usize> {
     let start = input.scope_cursor(|c| c.index());

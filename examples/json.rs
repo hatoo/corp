@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, tag, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
