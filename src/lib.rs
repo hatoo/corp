@@ -17,11 +17,6 @@ pub struct Cursor<T> {
 }
 
 impl<T> Cursor<T> {
-    #[inline]
-    pub fn remaining(&self) -> &[T] {
-        &self.buf[self.index..]
-    }
-
     fn sanity_check(&self) -> bool {
         self.index <= self.buf.len()
     }
@@ -181,7 +176,7 @@ impl<'a, T> CursorRef<'a, T> {
 
     #[inline]
     pub fn remaining(&self) -> &[T] {
-        self.cursor.remaining()
+        &self.cursor.buf[self.cursor.index..]
     }
 
     #[inline]
