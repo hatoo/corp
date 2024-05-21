@@ -8,6 +8,7 @@ use std::{
 use futures::task::noop_waker_ref;
 
 /// buf and index
+#[derive(Debug)]
 pub struct Cursor<T> {
     /// Sequence of items, you may append items to this when you want.
     /// I think reducing the items of `buf` isn't introduce an unsoundness (only may panics) but you don't want to do that.
@@ -24,6 +25,7 @@ impl<T> Cursor<T> {
 
 #[cfg(debug_assertions)]
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 
 #[cfg(not(debug_assertions))]
@@ -158,6 +160,7 @@ impl<T> Input<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct CursorRef<'a, T> {
     cursor: &'a mut Cursor<T>,
 }
@@ -186,6 +189,7 @@ impl<'a, T> CursorRef<'a, T> {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct InputRef<'a, T>(&'a Input<T>);
 
 impl<'a, T> InputRef<'a, T> {
@@ -235,6 +239,7 @@ where
 {
 }
 
+#[derive(Debug)]
 pub struct Parsing<'a, T, O, F> {
     input: &'a Input<T>,
     result: Option<O>,
@@ -287,6 +292,7 @@ impl<'a, T, O, F> Parsing<'a, T, O, F> {
     }
 }
 
+#[derive(Debug)]
 pub struct ParsingInput<T, O, F> {
     input: Input<T>,
     result: Option<O>,
