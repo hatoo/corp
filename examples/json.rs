@@ -93,6 +93,10 @@ fn main() {
 
         let n = std::io::stdin().read(&mut buf).unwrap();
 
+        if n == 0 {
+            break;
+        }
+
         parsing.cursor_mut().buf.extend_from_slice(&buf[..n]);
     }
 
