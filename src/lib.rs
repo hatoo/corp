@@ -359,6 +359,22 @@ where
     }
 }
 
+pub async fn just<'a, T>(input: &mut InputRef<'a, T>, t: T) -> Result<usize, ()>
+where
+    T: PartialEq,
+{
+    input.read_n(1).await;
+
+    input.scope_cursor_mut(|cursor| {
+        if cursor.remaining()[0] == t {
+            *cursor.index_mut() += 1;
+            Ok(cursor.index())
+        } else {
+            Err(())
+        }
+    })
+}
+
 pub async fn tag<'a, T>(input: &mut InputRef<'a, T>, tag: &[T]) -> Result<Range<usize>, ()>
 where
     T: PartialEq,

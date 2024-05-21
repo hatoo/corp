@@ -1,23 +1,14 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{many0, tag, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, tag, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
 }
 
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
-    iref.read_n(1).await;
-
-    iref.scope_cursor_mut(|c| {
-        if c.buf()[c.index()] == b'"' {
-            *c.index_mut() += 1;
-            Ok(())
-        } else {
-            Err(())
-        }
-    })?;
+    just(iref, b'"').await?;
 
     let range = many0(iref, |&c| c != b'"').await;
 
@@ -33,7 +24,7 @@ async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
 }
 
 async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()> {
-    tag(iref, b"{").await?;
+    just(iref, b'{').await?;
 
     let mut map = HashMap::new();
 
@@ -42,12 +33,12 @@ async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()
     loop {
         skip_whitespace(iref).await;
 
-        if tag(iref, b"}").await.is_ok() {
+        if just(iref, b'}').await.is_ok() {
             break;
         }
 
         if !first {
-            tag(iref, b",").await?;
+            just(iref, b',').await?;
             skip_whitespace(iref).await;
         }
 
@@ -57,7 +48,7 @@ async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()
 
         skip_whitespace(iref).await;
 
-        tag(iref, b":").await?;
+        just(iref, b':').await?;
 
         skip_whitespace(iref).await;
 
