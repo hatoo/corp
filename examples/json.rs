@@ -1,10 +1,24 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, many1, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
+}
+
+async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
+    let is_minus = just(iref, b'-').await.is_ok();
+    let range = many1(iref, |&c| c.is_ascii_digit() || c == b'.').await?;
+
+    dbg!(&range);
+
+    iref.scope_cursor(move |c| {
+        let s = std::str::from_utf8(&c.buf()[range]).unwrap();
+        let n: f64 = s.parse().unwrap();
+        let n = if is_minus { -n } else { n };
+        Ok(n)
+    })
 }
 
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
@@ -59,6 +73,10 @@ async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()
 }
 
 async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
+    if let Ok(n) = number(iref).await {
+        return Ok(Json::Number(n));
+    }
+
     if let Ok(s) = string(iref).await {
         return Ok(Json::String(s));
     }
@@ -70,10 +88,11 @@ async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
     Err(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 #[allow(dead_code)]
 enum Json {
     String(String),
+    Number(f64),
     Object(HashMap<String, Json>),
 }
 
@@ -104,7 +123,7 @@ fn main() {
 
 #[test]
 fn test_json() {
-    let example = r#"{"a": "b", "c": {"d": "e"}}"#;
+    let example = r#"{"a": "b", "c": {"d": "e"}, "f": 114514}"#;
 
     let mut input = Input::new(Cursor {
         buf: example.as_bytes().to_vec(),
@@ -128,6 +147,7 @@ fn test_json() {
                         .collect(),
                 ),
             ),
+            ("f".to_string(), Json::Number(114514f64)),
         ]
         .into_iter()
         .collect(),

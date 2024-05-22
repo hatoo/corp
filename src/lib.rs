@@ -374,8 +374,9 @@ where
 
     input.scope_cursor_mut(|cursor| {
         if cursor.remaining()[0] == t {
+            let index = cursor.index();
             *cursor.index_mut() += 1;
-            Ok(cursor.index())
+            Ok(index)
         } else {
             Err(())
         }
@@ -419,6 +420,36 @@ pub async fn many0<T>(
             None
         }) {
             return r;
+        }
+
+        input.read().await;
+    }
+}
+
+pub async fn many1<T>(
+    input: &mut InputRef<'_, T>,
+    mut cond: impl FnMut(&T) -> bool,
+) -> Result<Range<usize>, ()> {
+    let start = input.scope_cursor(|c| c.index());
+
+    loop {
+        if let Some(r) = input.scope_cursor_mut(|c| {
+            for (i, item) in c.remaining().iter().enumerate() {
+                if !cond(item) {
+                    *c.index_mut() += i;
+                    return Some(start..c.index());
+                }
+            }
+
+            let len = c.buf().len();
+            *c.index_mut() = len;
+            None
+        }) {
+            if r.start == r.end {
+                return Err(());
+            } else {
+                return Ok(r);
+            }
         }
 
         input.read().await;
