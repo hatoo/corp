@@ -30,6 +30,7 @@ pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 
 #[cfg(not(debug_assertions))]
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
