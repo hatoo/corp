@@ -12,9 +12,7 @@ async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
 
     let range = many0(iref, |&c| c != b'"').await;
 
-    iref.scope_cursor_mut(move |c| {
-        *c.index_mut() += 1;
-    });
+    just(iref, b'"').await?;
 
     iref.scope_cursor(move |c| {
         let s = std::str::from_utf8(&c.buf()[range]).unwrap();
@@ -72,7 +70,8 @@ async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
     Err(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 enum Json {
     String(String),
     Object(HashMap<String, Json>),
@@ -101,4 +100,38 @@ fn main() {
     }
 
     dbg!(parsing.into_result());
+}
+
+#[test]
+fn test_json() {
+    let example = r#"{"a": "b", "c": {"d": "e"}}"#;
+
+    let mut input = Input::new(Cursor {
+        buf: example.as_bytes().to_vec(),
+        index: 0,
+    });
+
+    let mut parsing = Parsing::new(&mut input, |mut iref| {
+        async move { json(&mut iref).await }.boxed_local()
+    });
+
+    assert!(parsing.poll());
+
+    let expected = Json::Object(
+        vec![
+            ("a".to_string(), Json::String("b".to_string())),
+            (
+                "c".to_string(),
+                Json::Object(
+                    vec![("d".to_string(), Json::String("e".to_string()))]
+                        .into_iter()
+                        .collect(),
+                ),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    );
+
+    assert_eq!(parsing.into_result().unwrap(), Ok(expected));
 }
