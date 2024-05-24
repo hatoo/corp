@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut, Range},
     pin::Pin,
     task::{Context, Poll},
@@ -366,6 +367,49 @@ where
     }
 }
 
+pub struct Anchor<'a, 'b, T> {
+    pub iref: &'a mut InputRef<'b, T>,
+    pub index: usize,
+}
+
+impl<'a, 'b, T> Anchor<'a, 'b, T> {
+    pub fn new(iref: &'a mut InputRef<'b, T>) -> Self {
+        Self {
+            index: iref.scope_cursor(|c| c.index()),
+            iref,
+        }
+    }
+
+    pub fn commit(self) -> &'a mut InputRef<'b, T> {
+        let m = ManuallyDrop::new(self);
+        let iref = unsafe { std::ptr::read(&m.iref) };
+
+        iref
+    }
+}
+
+impl<'a, 'b, T> Drop for Anchor<'a, 'b, T> {
+    fn drop(&mut self) {
+        self.iref.scope_cursor_mut(|c| {
+            *c.index_mut() = self.index;
+        });
+    }
+}
+
+impl<'a, 'b, T> Deref for Anchor<'a, 'b, T> {
+    type Target = &'a mut InputRef<'b, T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.iref
+    }
+}
+
+impl<'a, 'b, T> DerefMut for Anchor<'a, 'b, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.iref
+    }
+}
+
 pub async fn just<T>(input: &mut InputRef<'_, T>, t: T) -> Result<usize, ()>
 where
     T: PartialEq,
@@ -592,5 +636,47 @@ mod tests {
         parsing_input.cursor_mut().buf.extend(b";");
         assert!(parsing_input.poll());
         assert_eq!(parsing_input.result_mut(), Some(&mut (0..3, 3..6, 6..9)));
+    }
+
+    #[test]
+    fn test_anchor() {
+        async fn parser(
+            iref: &mut InputRef<'_, u8>,
+        ) -> Result<(Range<usize>, Range<usize>, Range<usize>), ()> {
+            let mut anchor = Anchor::new(iref);
+
+            let alpha0 = many1(&mut anchor, |x: &u8| x.is_ascii_alphabetic()).await?;
+            dbg!(&alpha0);
+            let digit = many1(&mut anchor, |x: &u8| x.is_ascii_digit()).await?;
+            dbg!(&digit);
+            let alpha2 = many1(&mut anchor, |x: &u8| x.is_ascii_alphabetic()).await?;
+
+            anchor.commit();
+
+            Ok((alpha0, digit, alpha2))
+        }
+
+        let mut input = Input::new(Cursor {
+            buf: Vec::new(),
+            index: 0,
+        });
+
+        let mut parsing =
+            input.start_parsing(|mut iref| async move { parser(&mut iref).await }.boxed_local());
+
+        parsing.cursor_mut().buf.extend(b"abc");
+
+        assert!(!parsing.poll());
+
+        parsing.cursor_mut().buf.extend(b"123");
+
+        assert!(!parsing.poll());
+
+        parsing.cursor_mut().buf.extend(b";");
+
+        assert!(parsing.poll());
+
+        assert_eq!(parsing.into_result(), Some(Err(())));
+        assert_eq!(input.cursor().index, 0);
     }
 }
