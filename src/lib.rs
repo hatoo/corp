@@ -380,6 +380,10 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
         }
     }
 
+    pub fn renew(&mut self) {
+        self.index = self.iref.scope_cursor(|c| c.index());
+    }
+
     pub fn commit(self) -> &'a mut InputRef<'b, T> {
         let m = ManuallyDrop::new(self);
         let iref = unsafe { std::ptr::read(&m.iref) };
