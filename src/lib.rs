@@ -1,3 +1,7 @@
+//! # WIP
+
+#![deny(missing_docs)]
+
 use std::{
     future::Future,
     mem::ManuallyDrop,
@@ -15,8 +19,8 @@ pub struct Cursor<T> {
     /// Sequence of items, you may append items to this when you want.
     /// This crate loosely assumes that you don't remove items from this.
     pub buf: Vec<T>,
-    /// Current index of the cursor.
-    /// This crate assumes index <= buf.len().
+    /// Current `index` of the cursor.
+    /// This crate assumes `index` <= `buf.len()`.
     pub index: usize,
 }
 
@@ -29,7 +33,7 @@ impl<T> Cursor<T> {
 #[cfg(debug_assertions)]
 #[repr(transparent)]
 #[derive(Debug)]
-/// Just a wrapper of Cursor.
+/// You need to wrap [`Cursor`] with this to parse.
 pub struct Input<T>(std::cell::RefCell<Cursor<T>>);
 
 #[cfg(not(debug_assertions))]
@@ -41,7 +45,7 @@ pub struct Input<T>(std::cell::UnsafeCell<Cursor<T>>);
 
 impl<T> Input<T> {
     #[inline]
-    /// Create a new Input from Cursor.
+    /// Create a new [`Input`] from [`Cursor`].
     pub fn new(cursor: Cursor<T>) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -54,7 +58,7 @@ impl<T> Input<T> {
     }
 
     #[inline]
-    /// Get a reference of Cursor.
+    /// Get a reference of [`Cursor`].
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
@@ -66,7 +70,7 @@ impl<T> Input<T> {
         }
     }
     #[inline]
-    /// Get a mutable reference of Cursor.
+    /// Get a mutable reference of [`Cursor`].
     pub fn cursor_mut(&mut self) -> impl DerefMut<Target = Cursor<T>> + '_ {
         #[cfg(debug_assertions)]
         {
@@ -91,6 +95,7 @@ impl<T> Input<T> {
         }
     }
 
+    /// Get the inner [`Cursor`].
     pub fn into_inner(self) -> Cursor<T> {
         self.0.into_inner()
     }
@@ -157,7 +162,7 @@ impl<T> Input<T> {
 
     #[inline]
     /// Start parsing with a parser.
-    /// Just a wrapper of Parsing::new.
+    /// Just a wrapper of [`Parsing::new`].
     pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, O, F>
     where
         P: Parser<'a, T, O, F>,
@@ -250,7 +255,8 @@ impl<'a, T> InputRef<'a, T> {
     }
 }
 
-/// Parser tarit
+/// Parser trait
+/// In this crate, a parser is defined as a function that takes an InputRef and returns a Future.
 pub trait Parser<'a, T, O, F>: FnOnce(InputRef<'a, T>) -> F
 where
     T: 'a,
@@ -416,7 +422,9 @@ where
 /// Anchoring the current index of the cursor.
 /// Restore index when dropped.
 pub struct Anchor<'a, 'b, T> {
+    /// Reference of InputRef.
     pub iref: &'a mut InputRef<'b, T>,
+    /// The index which is used to restore the cursor when drop.
     pub index: usize,
 }
 
