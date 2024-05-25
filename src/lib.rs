@@ -173,9 +173,9 @@ impl<T> Input<T> {
 
     #[inline]
     /// Start parsing with a parser.
-    /// Just a wrapper of ParsingInput::new.
+    /// Just a wrapper of `ParsingInput::new(Box::new(self))`.
     pub fn into_parsing_input<O, F>(self) -> ParsingInput<T, O, F> {
-        ParsingInput::<T, O, F>::new(self)
+        ParsingInput::<T, O, F>::new(Box::new(self))
     }
 }
 
@@ -339,14 +339,14 @@ impl<'a, T, O, F> Parsing<'a, T, O, F> {
 #[derive(Debug)]
 /// Parsing state holds an Input.
 pub struct ParsingInput<T, O, F> {
-    input: Input<T>,
+    input: Box<Input<T>>,
     result: Option<O>,
     future: Option<F>,
 }
 
 impl<T, O, F> ParsingInput<T, O, F> {
     /// Create a new ParsingInput from Input.
-    pub fn new(input: Input<T>) -> Self {
+    pub fn new(input: Box<Input<T>>) -> Self {
         Self {
             input,
             result: None,
@@ -374,7 +374,7 @@ impl<T, O, F> ParsingInput<T, O, F> {
 
     #[inline]
     /// Break the ParsingInput into Input.
-    pub fn into_input(self) -> Input<T> {
+    pub fn into_input(self) -> Box<Input<T>> {
         self.input
     }
 }
@@ -706,6 +706,8 @@ mod tests {
             }
             .boxed_local()
         });
+
+        let mut parsing_input = parsing_input;
 
         parsing_input.cursor_mut().buf.extend(b"abc");
         assert!(!parsing_input.poll());

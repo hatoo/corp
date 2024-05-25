@@ -9,7 +9,7 @@ fn main() {
 
     let mut leak = None;
 
-    let mut pi = ParsingInput::new(input);
+    let mut pi = ParsingInput::new(Box::new(input));
 
     pi.start_parsing(|iref| {
         let leak_mut = &mut leak;
