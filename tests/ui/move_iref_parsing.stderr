@@ -1,0 +1,13 @@
+error[E0505]: cannot move out of `input` because it is borrowed
+  --> tests/ui/move_iref_parsing.rs:15:10
+   |
+5  |     let mut input = Input::new(Cursor {
+   |         --------- binding `input` declared here
+...
+10 |     let mut p = Parsing::new(&mut input, |iref| async move { iref }.boxed_local());
+   |                              ---------- borrow of `input` occurs here
+...
+15 |     drop(input);
+   |          ^^^^^ move out of `input` occurs here
+16 |     iref;
+   |     ---- borrow later used here

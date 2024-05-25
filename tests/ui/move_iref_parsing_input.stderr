@@ -1,0 +1,14 @@
+error[E0505]: cannot move out of `pi` because it is borrowed
+  --> tests/ui/move_iref_parsing_input.rs:16:10
+   |
+10 |     let mut pi = ParsingInput::new(Box::new(input), |iref| async move { iref }.boxed_local());
+   |         ------ binding `pi` declared here
+...
+14 |     let iref = pi.result_mut();
+   |                -- borrow of `pi` occurs here
+15 |
+16 |     drop(pi);
+   |          ^^ move out of `pi` occurs here
+17 |
+18 |     iref;
+   |     ---- borrow later used here
