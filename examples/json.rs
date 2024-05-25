@@ -1,10 +1,24 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, many1, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, many1, tag, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
+}
+
+async fn null(iref: &mut InputRef<'_, u8>) -> Result<(), ()> {
+    tag(iref, b"null").await.map(|_| ())
+}
+
+async fn bool(iref: &mut InputRef<'_, u8>) -> Result<bool, ()> {
+    if tag(iref, b"true").await.is_ok() {
+        Ok(true)
+    } else if tag(iref, b"false").await.is_ok() {
+        Ok(false)
+    } else {
+        Err(())
+    }
 }
 
 // TODO: Support exp format like 1e5.
@@ -102,6 +116,14 @@ async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()
 }
 
 async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
+    if let Ok(()) = null(iref).await {
+        return Ok(Json::Null);
+    }
+
+    if let Ok(b) = bool(iref).await {
+        return Ok(Json::Bool(b));
+    }
+
     if let Ok(n) = number(iref).await {
         return Ok(Json::Number(n));
     }
@@ -124,6 +146,8 @@ async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
 enum Json {
+    Null,
+    Bool(bool),
     String(String),
     Number(f64),
     Array(Vec<Json>),
@@ -157,7 +181,8 @@ fn main() {
 
 #[test]
 fn test_json() {
-    let example = r#"{"a": "b", "c": {"d": "e"}, "f": 114514, "g": [1, "2"]}"#;
+    let example =
+        r#"{"a": "b", "c": {"d": "e"}, "f": 114514, "g": [1, "2"], "h": true, "i": null}"#;
 
     let mut input = Input::new(Cursor {
         buf: example.as_bytes().to_vec(),
@@ -186,6 +211,8 @@ fn test_json() {
                 "g".to_string(),
                 Json::Array(vec![Json::Number(1f64), Json::String("2".to_string())]),
             ),
+            ("h".to_string(), Json::Bool(true)),
+            ("i".to_string(), Json::Null),
         ]
         .into_iter()
         .collect(),
