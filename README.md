@@ -1,5 +1,7 @@
 # stap
 
+[![Crates.io](https://img.shields.io/crates/v/stap.svg)](https://crates.io/crates/stap)
+
 `stap` (**sta**teful **p**arser) is a library of stateful parser for streaming input using `async` syntax.
 
 When a input isn't enough for parsing, `stap` remembers the curent state and waits to more inputs and parses them when the input is supplied.
