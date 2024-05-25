@@ -166,16 +166,21 @@ impl<T> Input<T> {
     pub fn start_parsing<'a, O, F, P>(&'a mut self, parser: P) -> Parsing<'a, T, O, F>
     where
         P: Parser<'a, T, O, F>,
-        F: Future<Output = O> + Unpin + 'a,
+        F: Future<Output = O> + 'a,
     {
         Parsing::new(self, parser)
     }
 
     #[inline]
     /// Start parsing with a parser.
-    /// Just a wrapper of `ParsingInput::new(Box::new(self))`.
-    pub fn into_parsing_input<O, F>(self) -> ParsingInput<T, O, F> {
-        ParsingInput::<T, O, F>::new(Box::new(self))
+    /// Just a wrapper of `ParsingInput::new(Box::new(self), parser)`.
+    pub fn into_parsing<'a, O, F, P>(self, parser: P) -> ParsingInput<T, O, F>
+    where
+        T: 'a,
+        P: Parser<'a, T, O, F>,
+        F: Future<Output = O> + 'a,
+    {
+        ParsingInput::<T, O, F>::new(Box::new(self), parser)
     }
 }
 
@@ -282,7 +287,7 @@ pub struct Parsing<'a, T, O, F> {
 
 impl<'a, T, O, F> Parsing<'a, T, O, F>
 where
-    F: Future<Output = O> + Unpin + 'a,
+    F: Future<Output = O> + 'a,
 {
     #[inline]
     /// Create a new Parsing from Input and a parser.
@@ -301,7 +306,10 @@ where
     /// Run the parser.
     /// Return true if the parser is done. You shouldn't call this anymore. It may leads to panic or never return.
     /// Return false if the parser is pending. You should add more items to the buffer.
-    pub fn poll(&mut self) -> bool {
+    pub fn poll(&mut self) -> bool
+    where
+        F: Unpin,
+    {
         let mut cx = Context::from_waker(noop_waker_ref());
         match Pin::new(&mut self.future).poll(&mut cx) {
             Poll::Ready(result) => {
@@ -339,21 +347,13 @@ impl<'a, T, O, F> Parsing<'a, T, O, F> {
 #[derive(Debug)]
 /// Parsing state holds an Input.
 pub struct ParsingInput<T, O, F> {
+    // This makes input free to move.
     input: Box<Input<T>>,
     result: Option<O>,
-    future: Option<F>,
+    future: F,
 }
 
 impl<T, O, F> ParsingInput<T, O, F> {
-    /// Create a new ParsingInput from Input.
-    pub fn new(input: Box<Input<T>>) -> Self {
-        Self {
-            input,
-            result: None,
-            future: None,
-        }
-    }
-
     #[inline]
     /// Get the reference of Cursor.
     pub fn cursor(&self) -> impl Deref<Target = Cursor<T>> + '_ {
@@ -385,14 +385,18 @@ where
 {
     #[inline]
     /// Start parsing with a parser.
-    pub fn start_parsing<'a, P: Parser<'a, T, O, F>>(&mut self, parser: P)
+    pub fn new<'a, P: Parser<'a, T, O, F>>(input: Box<Input<T>>, parser: P) -> Self
     where
         T: 'a,
         F: 'a,
     {
-        self.future = Some(parser(InputRef(unsafe {
-            std::mem::transmute::<&Input<T>, &Input<T>>(&self.input)
-        })));
+        Self {
+            future: parser(InputRef(unsafe {
+                std::mem::transmute::<&Input<T>, &Input<T>>(input.as_ref())
+            })),
+            input,
+            result: None,
+        }
     }
 
     #[inline]
@@ -403,18 +407,13 @@ where
     where
         F: Unpin,
     {
-        if let Some(future) = self.future.as_mut() {
-            let mut cx = Context::from_waker(noop_waker_ref());
-            match Pin::new(future).poll(&mut cx) {
-                Poll::Ready(result) => {
-                    self.result = Some(result);
-                    self.future = None;
-                    true
-                }
-                Poll::Pending => false,
+        let mut cx = Context::from_waker(noop_waker_ref());
+        match Pin::new(&mut self.future).poll(&mut cx) {
+            Poll::Ready(result) => {
+                self.result = Some(result);
+                true
             }
-        } else {
-            false
+            Poll::Pending => false,
         }
     }
 }
@@ -692,9 +691,7 @@ mod tests {
             index: 0,
         });
 
-        let mut parsing_input = input.into_parsing_input();
-
-        parsing_input.start_parsing(move |mut iref: InputRef<u8>| {
+        let parsing_input = input.into_parsing(|mut iref: InputRef<u8>| {
             async move {
                 let alpha0 = many0(&mut iref, |x: &u8| x.is_ascii_alphabetic()).await;
                 dbg!(&alpha0);
@@ -707,6 +704,7 @@ mod tests {
             .boxed_local()
         });
 
+        // test move
         let mut parsing_input = parsing_input;
 
         parsing_input.cursor_mut().buf.extend(b"abc");

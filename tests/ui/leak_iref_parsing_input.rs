@@ -9,9 +9,7 @@ fn main() {
 
     let mut leak = None;
 
-    let mut pi = ParsingInput::new(Box::new(input));
-
-    pi.start_parsing(|iref| {
+    let mut pi = ParsingInput::new(Box::new(input), |iref| {
         let leak_mut = &mut leak;
         async move {
             *leak_mut = Some(iref);
