@@ -373,6 +373,7 @@ pub struct Anchor<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> Anchor<'a, 'b, T> {
+    #[inline]
     pub fn new(iref: &'a mut InputRef<'b, T>) -> Self {
         Self {
             index: iref.scope_cursor(|c| c.index()),
@@ -380,10 +381,12 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
         }
     }
 
+    #[inline]
     pub fn renew(&mut self) {
         self.index = self.iref.scope_cursor(|c| c.index());
     }
 
+    #[inline]
     pub fn commit(self) -> &'a mut InputRef<'b, T> {
         let m = ManuallyDrop::new(self);
         let iref = unsafe { std::ptr::read(&m.iref) };
@@ -393,6 +396,7 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> Drop for Anchor<'a, 'b, T> {
+    #[inline]
     fn drop(&mut self) {
         self.iref.scope_cursor_mut(|c| {
             *c.index_mut() = self.index;
@@ -403,12 +407,14 @@ impl<'a, 'b, T> Drop for Anchor<'a, 'b, T> {
 impl<'a, 'b, T> Deref for Anchor<'a, 'b, T> {
     type Target = &'a mut InputRef<'b, T>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.iref
     }
 }
 
 impl<'a, 'b, T> DerefMut for Anchor<'a, 'b, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.iref
     }
