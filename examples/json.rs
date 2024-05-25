@@ -7,11 +7,10 @@ async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
 }
 
+// TODO: Support exp format like 1e5.
 async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
     let is_minus = just(iref, b'-').await.is_ok();
     let range = many1(iref, |&c| c.is_ascii_digit() || c == b'.').await?;
-
-    dbg!(&range);
 
     iref.scope_cursor(move |c| {
         let s = std::str::from_utf8(&c.buf()[range]).unwrap();
@@ -21,6 +20,7 @@ async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
     })
 }
 
+// TODO: Support escape.
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     just(iref, b'"').await?;
 
@@ -33,6 +33,35 @@ async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
         let s = s.to_string();
         Ok(s)
     })
+}
+
+async fn array(iref: &mut InputRef<'_, u8>) -> Result<Vec<Json>, ()> {
+    just(iref, b'[').await?;
+
+    let mut array = Vec::new();
+
+    let mut first = true;
+
+    loop {
+        skip_whitespace(iref).await;
+
+        if just(iref, b']').await.is_ok() {
+            break;
+        }
+
+        if !first {
+            just(iref, b',').await?;
+            skip_whitespace(iref).await;
+        }
+
+        first = false;
+
+        let value = Box::pin(json(iref)).await?;
+
+        array.push(value);
+    }
+
+    Ok(array)
 }
 
 async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()> {
@@ -81,6 +110,10 @@ async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
         return Ok(Json::String(s));
     }
 
+    if let Ok(a) = array(iref).await {
+        return Ok(Json::Array(a));
+    }
+
     if let Ok(o) = object(iref).await {
         return Ok(Json::Object(o));
     }
@@ -93,6 +126,7 @@ async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
 enum Json {
     String(String),
     Number(f64),
+    Array(Vec<Json>),
     Object(HashMap<String, Json>),
 }
 
@@ -123,7 +157,7 @@ fn main() {
 
 #[test]
 fn test_json() {
-    let example = r#"{"a": "b", "c": {"d": "e"}, "f": 114514}"#;
+    let example = r#"{"a": "b", "c": {"d": "e"}, "f": 114514, "g": [1, "2"]}"#;
 
     let mut input = Input::new(Cursor {
         buf: example.as_bytes().to_vec(),
@@ -148,6 +182,10 @@ fn test_json() {
                 ),
             ),
             ("f".to_string(), Json::Number(114514f64)),
+            (
+                "g".to_string(),
+                Json::Array(vec![Json::Number(1f64), Json::String("2".to_string())]),
+            ),
         ]
         .into_iter()
         .collect(),
