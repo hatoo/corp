@@ -2,6 +2,13 @@
 name = "stap"
 version = "0.1.0"
 edition = "2021"
+authors = ["hatoo <hato2000@gmail.com>"]
+description = "Stateful parser"
+license = "MIT"
+repository = "https://github.com/hatoo/stap"
+readme = "README.md"
+keywords = ["parser", "parsing", "streaming", "async"]
+categories = ["parsing"]
 
 [dependencies]
 futures = { version = "0.3.30", default-features = false }
