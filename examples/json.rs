@@ -1,7 +1,6 @@
-use std::io::Read;
+use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use serde_json::{Map, Number, Value};
 use stap::{just, many0, many1, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
@@ -36,10 +35,10 @@ async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     })
 }
 
-async fn object(iref: &mut InputRef<'_, u8>) -> Result<Map<String, Value>, ()> {
+async fn object(iref: &mut InputRef<'_, u8>) -> Result<HashMap<String, Json>, ()> {
     just(iref, b'{').await?;
 
-    let mut map = Map::new();
+    let mut map = HashMap::new();
 
     let mut first = true;
 
@@ -73,20 +72,28 @@ async fn object(iref: &mut InputRef<'_, u8>) -> Result<Map<String, Value>, ()> {
     Ok(map)
 }
 
-async fn json(iref: &mut InputRef<'_, u8>) -> Result<Value, ()> {
+async fn json(iref: &mut InputRef<'_, u8>) -> Result<Json, ()> {
     if let Ok(n) = number(iref).await {
-        return Ok(Value::Number(Number::from_f64(n).unwrap()));
+        return Ok(Json::Number(n));
     }
 
     if let Ok(s) = string(iref).await {
-        return Ok(Value::String(s));
+        return Ok(Json::String(s));
     }
 
     if let Ok(o) = object(iref).await {
-        return Ok(Value::Object(o));
+        return Ok(Json::Object(o));
     }
 
     Err(())
+}
+
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+enum Json {
+    String(String),
+    Number(f64),
+    Object(HashMap<String, Json>),
 }
 
 fn main() {
@@ -116,8 +123,6 @@ fn main() {
 
 #[test]
 fn test_json() {
-    use serde_json::json;
-
     let example = r#"{"a": "b", "c": {"d": "e"}, "f": 114514}"#;
 
     let mut input = Input::new(Cursor {
@@ -131,14 +136,22 @@ fn test_json() {
 
     assert!(parsing.poll());
 
-    let expected = json!(
-    {
-        "a": "b",
-        "c": {
-            "d": "e"
-        },
-        "f": 114514.0
-    });
+    let expected = Json::Object(
+        vec![
+            ("a".to_string(), Json::String("b".to_string())),
+            (
+                "c".to_string(),
+                Json::Object(
+                    vec![("d".to_string(), Json::String("e".to_string()))]
+                        .into_iter()
+                        .collect(),
+                ),
+            ),
+            ("f".to_string(), Json::Number(114514f64)),
+        ]
+        .into_iter()
+        .collect(),
+    );
 
     assert_eq!(parsing.into_result().unwrap(), Ok(expected));
 }
