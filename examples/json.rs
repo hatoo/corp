@@ -46,6 +46,7 @@ async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
     })
 }
 
+// TODO: unescape string
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     just(iref, b'"').await?;
 
