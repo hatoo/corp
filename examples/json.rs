@@ -44,11 +44,17 @@ async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
     })
 }
 
-// TODO: Support escape.
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     just(iref, b'"').await?;
 
-    let range = many0(iref, |&c| c != b'"').await;
+    let mut last = b'"';
+    let range = many0(iref, |&c| {
+        let ret = last == b'\\' || c != b'"';
+        last = c;
+
+        ret
+    })
+    .await;
 
     just(iref, b'"').await?;
 
@@ -165,6 +171,8 @@ enum Json {
 }
 
 fn main() {
+    println!("Please input a JSON string\nIt will exit when parsing has succeeded or failed:");
+
     let mut input = Input::new(Cursor {
         buf: Vec::new(),
         index: 0,
@@ -174,10 +182,10 @@ fn main() {
         async move { json(&mut iref).await }.boxed_local()
     });
 
+    let mut buf = [0; 4096];
+    let mut stdin = std::io::stdin().lock();
     while !parsing.poll() {
-        let mut buf = [0; 4096];
-
-        let n = std::io::stdin().read(&mut buf).unwrap();
+        let n = stdin.read(&mut buf).unwrap();
 
         if n == 0 {
             break;
