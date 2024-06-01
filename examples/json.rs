@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, many1, tag, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, many1, tag, Anchor, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
@@ -21,15 +21,25 @@ async fn bool(iref: &mut InputRef<'_, u8>) -> Result<bool, ()> {
     }
 }
 
-// TODO: Support exp format like 1e5.
 async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
-    let is_minus = just(iref, b'-').await.is_ok();
-    let range = many1(iref, |&c| c.is_ascii_digit() || c == b'.').await?;
+    let mut anchor = Anchor::new(iref);
+
+    let _ = just(&mut anchor, b'-').await;
+    many1(&mut anchor, |&c| c.is_ascii_digit()).await?;
+
+    if just(&mut anchor, b'.').await.is_ok() {
+        many0(&mut anchor, |&c| c.is_ascii_digit()).await;
+    } else if just(&mut anchor, b'e').await.is_ok() || just(&mut anchor, b'E').await.is_ok() {
+        let _ = just(&mut anchor, b'-').await;
+        let _ = many1(&mut anchor, |&c| c.is_ascii_digit()).await;
+    }
+
+    let range = anchor.range();
+    anchor.forget();
 
     iref.scope_cursor(move |c| {
         let s = std::str::from_utf8(&c.buf()[range]).unwrap();
         let n: f64 = s.parse().unwrap();
-        let n = if is_minus { -n } else { n };
         Ok(n)
     })
 }

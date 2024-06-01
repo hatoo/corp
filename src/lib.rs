@@ -451,6 +451,12 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
 
         iref
     }
+
+    #[inline]
+    /// Get the range of the start of the anchor to the current index.
+    pub fn range(&self) -> Range<usize> {
+        self.index..self.iref.scope_cursor(|c| c.index())
+    }
 }
 
 impl<'a, 'b, T> Drop for Anchor<'a, 'b, T> {
@@ -765,5 +771,23 @@ mod tests {
 
         assert_eq!(parsing.into_result(), Some(Err(())));
         assert_eq!(input.cursor().index, 0);
+    }
+
+    #[test]
+    fn test_early_return() {
+        let mut input = Input::new(Cursor {
+            buf: vec![1, 2, 3],
+            index: 0,
+        });
+
+        let mut parsing = input.start_parsing(|mut iref| {
+            async move { just(&mut iref, 1).await.is_ok() || just(&mut iref, 2).await.is_ok() }
+                .boxed_local()
+        });
+
+        assert!(parsing.poll());
+
+        assert_eq!(parsing.into_result(), Some(true));
+        assert_eq!(input.cursor().index, 1);
     }
 }
