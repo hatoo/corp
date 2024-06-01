@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, many1, tag, Cursor, Input, InputRef, Parsing};
+use stap::{just, many0, many1, tag, Anchor, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
@@ -21,24 +21,40 @@ async fn bool(iref: &mut InputRef<'_, u8>) -> Result<bool, ()> {
     }
 }
 
-// TODO: Support exp format like 1e5.
 async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
-    let is_minus = just(iref, b'-').await.is_ok();
-    let range = many1(iref, |&c| c.is_ascii_digit() || c == b'.').await?;
+    let mut anchor = Anchor::new(iref);
+
+    let _ = just(&mut anchor, b'-').await;
+    many1(&mut anchor, |&c| c.is_ascii_digit()).await?;
+
+    if just(&mut anchor, b'.').await.is_ok() {
+        many0(&mut anchor, |&c| c.is_ascii_digit()).await;
+    } else if just(&mut anchor, b'e').await.is_ok() || just(&mut anchor, b'E').await.is_ok() {
+        let _ = just(&mut anchor, b'-').await;
+        let _ = many1(&mut anchor, |&c| c.is_ascii_digit()).await;
+    }
+
+    let range = anchor.range();
+    anchor.forget();
 
     iref.scope_cursor(move |c| {
         let s = std::str::from_utf8(&c.buf()[range]).unwrap();
         let n: f64 = s.parse().unwrap();
-        let n = if is_minus { -n } else { n };
         Ok(n)
     })
 }
 
-// TODO: Support escape.
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     just(iref, b'"').await?;
 
-    let range = many0(iref, |&c| c != b'"').await;
+    let mut last = b'"';
+    let range = many0(iref, |&c| {
+        let ret = last == b'\\' || c != b'"';
+        last = c;
+
+        ret
+    })
+    .await;
 
     just(iref, b'"').await?;
 
@@ -155,6 +171,8 @@ enum Json {
 }
 
 fn main() {
+    println!("Please input a JSON string\nIt will exit when parsing has succeeded or failed:");
+
     let mut input = Input::new(Cursor {
         buf: Vec::new(),
         index: 0,
@@ -164,10 +182,10 @@ fn main() {
         async move { json(&mut iref).await }.boxed_local()
     });
 
+    let mut buf = [0; 4096];
+    let mut stdin = std::io::stdin().lock();
     while !parsing.poll() {
-        let mut buf = [0; 4096];
-
-        let n = std::io::stdin().read(&mut buf).unwrap();
+        let n = stdin.read(&mut buf).unwrap();
 
         if n == 0 {
             break;

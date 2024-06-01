@@ -4,7 +4,7 @@
 use std::{
     future::Future,
     mem::ManuallyDrop,
-    ops::{Deref, DerefMut, Range},
+    ops::{ControlFlow, Deref, DerefMut, Range},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -451,6 +451,12 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
 
         iref
     }
+
+    #[inline]
+    /// Get the range of the start of the anchor to the current index.
+    pub fn range(&self) -> Range<usize> {
+        self.index..self.iref.scope_cursor(|c| c.index())
+    }
 }
 
 impl<'a, 'b, T> Drop for Anchor<'a, 'b, T> {
@@ -503,17 +509,36 @@ pub async fn tag<T>(input: &mut InputRef<'_, T>, tag: &[T]) -> Result<Range<usiz
 where
     T: PartialEq,
 {
-    input.read_n(tag.len()).await;
+    let mut index = 0;
+    loop {
+        let flow = input.scope_cursor_mut(|cursor| {
+            let remaining = cursor.remaining();
+            let len = remaining.len();
+            if len < tag.len() {
+                if !tag[index..].starts_with(&remaining[index..]) {
+                    return ControlFlow::Break(Err(()));
+                }
+                index = len;
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(if !tag[index..].starts_with(&remaining[..tag.len()]) {
+                    Err(())
+                } else {
+                    *cursor.index_mut() += tag.len();
+                    Ok(cursor.index()..cursor.index() + tag.len())
+                })
+            }
+        });
+        match flow {
+            ControlFlow::Continue(()) => {
+                input.read().await;
+            }
 
-    input.scope_cursor_mut(|cursor| {
-        if cursor.remaining().starts_with(tag) {
-            let start = cursor.index();
-            *cursor.index_mut() += tag.len();
-            Ok(start..cursor.index())
-        } else {
-            Err(())
+            ControlFlow::Break(r) => {
+                return r;
+            }
         }
-    })
+    }
 }
 
 /// Match zero or more items until cond is true.
@@ -765,5 +790,58 @@ mod tests {
 
         assert_eq!(parsing.into_result(), Some(Err(())));
         assert_eq!(input.cursor().index, 0);
+    }
+
+    #[test]
+    fn test_early_return() {
+        let mut input = Input::new(Cursor {
+            buf: vec![1, 2, 3],
+            index: 0,
+        });
+
+        let mut parsing = input.start_parsing(|mut iref| {
+            async move { just(&mut iref, 1).await.is_ok() || just(&mut iref, 2).await.is_ok() }
+                .boxed_local()
+        });
+
+        assert!(parsing.poll());
+
+        assert_eq!(parsing.into_result(), Some(true));
+        assert_eq!(input.cursor().index, 1);
+    }
+
+    #[test]
+    fn test_tag() {
+        {
+            let mut input = Input::new(Cursor {
+                buf: vec![1, 2, 3],
+                index: 0,
+            });
+
+            let mut parsing = input.start_parsing(|mut iref| {
+                async move { tag(&mut iref, &[1, 2, 4]).await.is_ok() }.boxed_local()
+            });
+
+            assert!(parsing.poll());
+
+            assert_eq!(parsing.into_result(), Some(false));
+            assert_eq!(input.cursor().index, 0);
+        }
+
+        {
+            let mut input = Input::new(Cursor {
+                buf: vec![1, 2, 3],
+                index: 0,
+            });
+
+            let mut parsing = input.start_parsing(|mut iref| {
+                async move { tag(&mut iref, &[1, 2, 3]).await.is_ok() }.boxed_local()
+            });
+
+            assert!(parsing.poll());
+
+            assert_eq!(parsing.into_result(), Some(true));
+            assert_eq!(input.cursor().index, 3);
+        }
     }
 }
