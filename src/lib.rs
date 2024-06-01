@@ -13,7 +13,7 @@ use futures::task::noop_waker_ref;
 
 /// Data of input.
 /// Buffer and current index.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Cursor<T> {
     /// Sequence of items, you may append items to this when you want.
     /// This crate loosely assumes that you don't remove items from this.
@@ -580,6 +580,8 @@ pub async fn many1<T>(
 
 #[cfg(test)]
 mod tests {
+    use std::mem::take;
+
     use futures::FutureExt;
 
     use super::*;
@@ -676,6 +678,12 @@ mod tests {
         assert!(!parsing.poll());
         parsing.cursor_mut().buf.extend(b"123");
         assert!(!parsing.poll());
+
+        // soundness test
+        let c = take(parsing.cursor_mut().deref_mut());
+        parsing.cursor_mut().index = c.index;
+        parsing.cursor_mut().buf = c.buf.clone();
+
         parsing.cursor_mut().buf.extend(b"abc");
         assert!(!parsing.poll());
         parsing.cursor_mut().buf.extend(b";");
