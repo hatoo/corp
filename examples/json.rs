@@ -29,7 +29,9 @@ async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
 
     if just(&mut anchor, b'.').await.is_ok() {
         many0(&mut anchor, |&c| c.is_ascii_digit()).await;
-    } else if just(&mut anchor, b'e').await.is_ok() || just(&mut anchor, b'E').await.is_ok() {
+    }
+
+    if just(&mut anchor, b'e').await.is_ok() || just(&mut anchor, b'E').await.is_ok() {
         let _ = just(&mut anchor, b'-').await;
         let _ = many1(&mut anchor, |&c| c.is_ascii_digit()).await;
     }
