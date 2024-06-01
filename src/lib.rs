@@ -447,9 +447,8 @@ impl<'a, 'b, T> Anchor<'a, 'b, T> {
     /// The current index of the cursor is unchanged.
     pub fn forget(self) -> &'a mut InputRef<'b, T> {
         let m = ManuallyDrop::new(self);
-        let iref = unsafe { std::ptr::read(&m.iref) };
 
-        iref
+        (unsafe { std::ptr::read(&m.iref) }) as _
     }
 
     #[inline]
@@ -707,7 +706,7 @@ mod tests {
         // soundness test
         let c = take(parsing.cursor_mut().deref_mut());
         parsing.cursor_mut().index = c.index;
-        parsing.cursor_mut().buf = c.buf.clone();
+        parsing.cursor_mut().buf.clone_from(&c.buf);
 
         parsing.cursor_mut().buf.extend(b"abc");
         assert!(!parsing.poll());
