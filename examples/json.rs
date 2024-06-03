@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use futures::FutureExt;
-use stap::{just, many0, many1, tag, Anchor, Cursor, Input, InputRef, Parsing};
+use stap::{copy1, just, many0, many1, tag, Anchor, Cursor, Input, InputRef, Parsing};
 
 async fn skip_whitespace(iref: &mut InputRef<'_, u8>) {
     many0(iref, |&c| c.is_ascii_whitespace()).await;
@@ -46,26 +46,54 @@ async fn number(iref: &mut InputRef<'_, u8>) -> Result<f64, ()> {
     })
 }
 
-// TODO: unescape string
 async fn string(iref: &mut InputRef<'_, u8>) -> Result<String, ()> {
     just(iref, b'"').await?;
 
-    let mut last = b'"';
-    let range = many0(iref, |&c| {
-        let ret = last == b'\\' || c != b'"';
-        last = c;
+    let mut buf = Vec::new();
 
-        ret
-    })
-    .await;
+    loop {
+        let x = copy1(iref).await;
 
-    just(iref, b'"').await?;
+        if x == b'\\' {
+            let e = copy1(iref).await;
 
-    iref.scope_cursor(move |c| {
-        let s = std::str::from_utf8(&c.buf()[range]).unwrap();
-        let s = s.to_string();
-        Ok(s)
-    })
+            match e {
+                b'"' => buf.push(b'"'),
+                b'\\' => buf.push(b'\\'),
+                b'/' => buf.push(b'/'),
+                b'b' => buf.push(b'\x08'),
+                b'f' => buf.push(b'\x0c'),
+                b'n' => buf.push(b'\n'),
+                b'r' => buf.push(b'\r'),
+                b't' => buf.push(b'\t'),
+                b'u' => {
+                    let mut code = 0u32;
+
+                    for _ in 0..4 {
+                        let x = copy1(iref).await;
+
+                        code = code * 16
+                            + match x {
+                                b'0'..=b'9' => (x - b'0') as u32,
+                                b'a'..=b'f' => (x - b'a' + 10) as u32,
+                                b'A'..=b'F' => (x - b'A' + 10) as u32,
+                                _ => unreachable!(),
+                            };
+                    }
+
+                    buf.extend_from_slice(&code.to_be_bytes());
+                }
+                _ => unreachable!(),
+            }
+        } else if x == b'"' {
+            break;
+        } else {
+            buf.push(x);
+        }
+    }
+
+    let s = String::from_utf8(buf).unwrap();
+    Ok(s)
 }
 
 async fn array(iref: &mut InputRef<'_, u8>) -> Result<Vec<Json>, ()> {

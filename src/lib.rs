@@ -602,6 +602,17 @@ pub async fn many1<T>(
     }
 }
 
+/// Copy the first item of the remaining items.
+/// Advance the cursor index
+pub async fn copy1<T: Copy>(iref: &mut InputRef<'_, T>) -> T {
+    iref.read_n(1).await;
+    iref.scope_cursor_mut(|c| {
+        let index = c.index();
+        *c.index_mut() += 1;
+        c.buf()[index]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::mem::take;
